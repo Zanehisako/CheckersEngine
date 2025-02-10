@@ -1,0 +1,110 @@
+{
+  "$schema": "https://raw.githubusercontent.com/spdx/spdx-spec/v2.2.1/schemas/spdx-schema.json",
+  "spdxVersion": "SPDX-2.2",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "documentNamespace": "https://spdx.org/spdxdocs/boost-numeric-conversion-x64-windows-1.86.0-0adf60cb-f275-4a7d-9d03-b21d5c80fd8e",
+  "name": "boost-numeric-conversion:x64-windows@1.86.0 8cf2b06592013a78fc08a2f8863e8fd33402c40e4521eda906aa8d3e6e572199",
+  "creationInfo": {
+    "creators": [
+      "Tool: vcpkg-2025-01-29-a75ad067f470c19f030361064e32a2585392bee2"
+    ],
+    "created": "2025-02-10T16:39:49Z"
+  },
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-port",
+      "relationshipType": "GENERATES",
+      "relatedSpdxElement": "SPDXRef-binary"
+    },
+    {
+      "spdxElementId": "SPDXRef-port",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-file-0"
+    },
+    {
+      "spdxElementId": "SPDXRef-port",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-file-1"
+    },
+    {
+      "spdxElementId": "SPDXRef-binary",
+      "relationshipType": "GENERATED_FROM",
+      "relatedSpdxElement": "SPDXRef-port"
+    },
+    {
+      "spdxElementId": "SPDXRef-file-0",
+      "relationshipType": "CONTAINED_BY",
+      "relatedSpdxElement": "SPDXRef-port"
+    },
+    {
+      "spdxElementId": "SPDXRef-file-1",
+      "relationshipType": "CONTAINED_BY",
+      "relatedSpdxElement": "SPDXRef-port"
+    }
+  ],
+  "packages": [
+    {
+      "name": "boost-numeric-conversion",
+      "SPDXID": "SPDXRef-port",
+      "versionInfo": "1.86.0",
+      "downloadLocation": "git+https://github.com/microsoft/vcpkg@d7c5fdc151bf418c8b4c7e8df69306797ea12f63",
+      "homepage": "https://www.boost.org/libs/numeric/conversion",
+      "licenseConcluded": "BSL-1.0",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "description": "Boost numeric_conversion module",
+      "comment": "This is the port (recipe) consumed by vcpkg."
+    },
+    {
+      "name": "boost-numeric-conversion:x64-windows",
+      "SPDXID": "SPDXRef-binary",
+      "versionInfo": "8cf2b06592013a78fc08a2f8863e8fd33402c40e4521eda906aa8d3e6e572199",
+      "downloadLocation": "NONE",
+      "licenseConcluded": "BSL-1.0",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "comment": "This is a binary package built by vcpkg."
+    },
+    {
+      "SPDXID": "SPDXRef-resource-0",
+      "name": "boostorg/numeric_conversion",
+      "downloadLocation": "git+https://github.com/boostorg/numeric_conversion@boost-1.86.0",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "checksums": [
+        {
+          "algorithm": "SHA512",
+          "checksumValue": "b2f80515df47f92b5db2711c6fee577c1b776b302a712d6105caf7ade6727799cc0e30e09cc251b59f0315fbbb96593cc66b7fa5209ecce87b8476a4652df444"
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "fileName": "./C:/Users/Yassine/AppData/Local/vcpkg/registries/git-trees/d7c5fdc151bf418c8b4c7e8df69306797ea12f63/portfile.cmake",
+      "SPDXID": "SPDXRef-file-0",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "9c5f8a9af061f43e781508eab6ee048e2488d16b4238fc42685f17a6b8cdff8c"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "fileName": "./C:/Users/Yassine/AppData/Local/vcpkg/registries/git-trees/d7c5fdc151bf418c8b4c7e8df69306797ea12f63/vcpkg.json",
+      "SPDXID": "SPDXRef-file-1",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "c908fb8bbbd9a809fd4a45ab071652d48ca052f19e5c6a0b860799977912b08d"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+{
+  "$schema": "https://raw.githubusercontent.com/spdx/spdx-spec/v2.2.1/schemas/spdx-schema.json",
+  "spdxVersion": "SPDX-2.2",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "documentNamespace": "https://spdx.org/spdxdocs/boost-preprocessor-x64-windows-1.86.0-15b7fd83-526a-4e0a-9886-c4454cfb696a",
+  "name": "boost-preprocessor:x64-windows@1.86.0 8536d2ea59c1a7ac62ff203494a360f0ef670c5dbee5cd3c1ed48e7ceeeddf53",
+  "creationInfo": {
+    "creators": [
+      "Tool: vcpkg-2025-01-29-a75ad067f470c19f030361064e32a2585392bee2"
+    ],
+    "created": "2025-02-10T16:38:00Z"
+  },
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-port",
+      "relationshipType": "GENERATES",
+      "relatedSpdxElement": "SPDXRef-binary"
+    },
+    {
+      "spdxElementId": "SPDXRef-port",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-file-0"
+    },
+    {
+      "spdxElementId": "SPDXRef-port",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-file-1"
+    },
+    {
+      "spdxElementId": "SPDXRef-binary",
+      "relationshipType": "GENERATED_FROM",
+      "relatedSpdxElement": "SPDXRef-port"
+    },
+    {
+      "spdxElementId": "SPDXRef-file-0",
+      "relationshipType": "CONTAINED_BY",
+      "relatedSpdxElement": "SPDXRef-port"
+    },
+    {
+      "spdxElementId": "SPDXRef-file-1",
+      "relationshipType": "CONTAINED_BY",
+      "relatedSpdxElement": "SPDXRef-port"
+    }
+  ],
+  "packages": [
+    {
+      "name": "boost-preprocessor",
+      "SPDXID": "SPDXRef-port",
+      "versionInfo": "1.86.0",
+      "downloadLocation": "git+https://github.com/microsoft/vcpkg@a086ddc6ee105650c442c1d40438b1670e3248b4",
+      "homepage": "https://www.boost.org/libs/preprocessor",
+      "licenseConcluded": "BSL-1.0",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "description": "Boost preprocessor module",
+      "comment": "This is the port (recipe) consumed by vcpkg."
+    },
+    {
+      "name": "boost-preprocessor:x64-windows",
+      "SPDXID": "SPDXRef-binary",
+      "versionInfo": "8536d2ea59c1a7ac62ff203494a360f0ef670c5dbee5cd3c1ed48e7ceeeddf53",
+      "downloadLocation": "NONE",
+      "licenseConcluded": "BSL-1.0",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "comment": "This is a binary package built by vcpkg."
+    },
+    {
+      "SPDXID": "SPDXRef-resource-0",
+      "name": "boostorg/preprocessor",
+      "downloadLocation": "git+https://github.com/boostorg/preprocessor@boost-1.86.0",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "checksums": [
+        {
+          "algorithm": "SHA512",
+          "checksumValue": "f7b4c108c8276da8b441136af2e24dba67842e1461f4f1add56722680c2f8194f87e06610be09ad8c65145e5fd1f74430027fa606599d1b2d2824a0805cfcf01"
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "fileName": "./C:/Users/Yassine/AppData/Local/vcpkg/registries/git-trees/a086ddc6ee105650c442c1d40438b1670e3248b4/portfile.cmake",
+      "SPDXID": "SPDXRef-file-0",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "cf2c76d6eb06485aa27273c7548247e855bd578f568903f5167a8fcae0616fc6"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "fileName": "./C:/Users/Yassine/AppData/Local/vcpkg/registries/git-trees/a086ddc6ee105650c442c1d40438b1670e3248b4/vcpkg.json",
+      "SPDXID": "SPDXRef-file-1",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "1175c7eaad86fdfcadc6b9800690d4bd4ecd221e52cefcb5accfdd8aa15f2237"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    }
+  ]
+}

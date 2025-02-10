@@ -1,0 +1,110 @@
+{
+  "$schema": "https://raw.githubusercontent.com/spdx/spdx-spec/v2.2.1/schemas/spdx-schema.json",
+  "spdxVersion": "SPDX-2.2",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "documentNamespace": "https://spdx.org/spdxdocs/boost-functional-x64-windows-1.86.0-88ad6dbb-b9e7-41d8-a04b-1ddea288e087",
+  "name": "boost-functional:x64-windows@1.86.0 636de0ea4d595cf95a4806210f0cb482090418e94621df536382fbf4e0da08ec",
+  "creationInfo": {
+    "creators": [
+      "Tool: vcpkg-2025-01-29-a75ad067f470c19f030361064e32a2585392bee2"
+    ],
+    "created": "2025-02-10T16:38:52Z"
+  },
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-port",
+      "relationshipType": "GENERATES",
+      "relatedSpdxElement": "SPDXRef-binary"
+    },
+    {
+      "spdxElementId": "SPDXRef-port",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-file-0"
+    },
+    {
+      "spdxElementId": "SPDXRef-port",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-file-1"
+    },
+    {
+      "spdxElementId": "SPDXRef-binary",
+      "relationshipType": "GENERATED_FROM",
+      "relatedSpdxElement": "SPDXRef-port"
+    },
+    {
+      "spdxElementId": "SPDXRef-file-0",
+      "relationshipType": "CONTAINED_BY",
+      "relatedSpdxElement": "SPDXRef-port"
+    },
+    {
+      "spdxElementId": "SPDXRef-file-1",
+      "relationshipType": "CONTAINED_BY",
+      "relatedSpdxElement": "SPDXRef-port"
+    }
+  ],
+  "packages": [
+    {
+      "name": "boost-functional",
+      "SPDXID": "SPDXRef-port",
+      "versionInfo": "1.86.0",
+      "downloadLocation": "git+https://github.com/microsoft/vcpkg@1a149e24ca42cbda3040781ebb9a4a634ccccfba",
+      "homepage": "https://www.boost.org/libs/functional",
+      "licenseConcluded": "BSL-1.0",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "description": "Boost functional module",
+      "comment": "This is the port (recipe) consumed by vcpkg."
+    },
+    {
+      "name": "boost-functional:x64-windows",
+      "SPDXID": "SPDXRef-binary",
+      "versionInfo": "636de0ea4d595cf95a4806210f0cb482090418e94621df536382fbf4e0da08ec",
+      "downloadLocation": "NONE",
+      "licenseConcluded": "BSL-1.0",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "comment": "This is a binary package built by vcpkg."
+    },
+    {
+      "SPDXID": "SPDXRef-resource-0",
+      "name": "boostorg/functional",
+      "downloadLocation": "git+https://github.com/boostorg/functional@boost-1.86.0",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "checksums": [
+        {
+          "algorithm": "SHA512",
+          "checksumValue": "47bd14e4768bc2d71e450d3c82be006bb036526f9de2667aabd81646bc80da144a6f43e21a9e5d2d38272c268fb1aa48644a36fb75dc010ef879f2fbc4dfa633"
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "fileName": "./C:/Users/Yassine/AppData/Local/vcpkg/registries/git-trees/1a149e24ca42cbda3040781ebb9a4a634ccccfba/portfile.cmake",
+      "SPDXID": "SPDXRef-file-0",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "853b2f8e0c8b1cb0cd97f0e001e6c888e5fea3ef856f4cb10b05a9f15c0782d6"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "fileName": "./C:/Users/Yassine/AppData/Local/vcpkg/registries/git-trees/1a149e24ca42cbda3040781ebb9a4a634ccccfba/vcpkg.json",
+      "SPDXID": "SPDXRef-file-1",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "9763426b0a0c49b87e4a83c60075f37732c16c20ec6bf7f911c92759a313cc5e"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    }
+  ]
+}
