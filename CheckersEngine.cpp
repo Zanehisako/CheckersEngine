@@ -20,91 +20,59 @@ using Bitboard = uint32_t;
 //   - On odd rows (1, 3, 5, 7), playable squares are in columns 1,3,5,7.
 // Move Generation Functions
 struct MoveArrays {
-    std::array<int, 32> redMoveLeft;
-    std::array<int, 32> redMoveRight;
-    std::array<int, 32> blackMoveLeft;
-    std::array<int, 32> blackMoveRight;
+    std::array<Bitboard, 32> whiteMan;
+    std::array<Bitboard, 32> blackMan;
+    std::array<Bitboard, 32> whiteKing;
+    std::array<Bitboard, 32> blackKing;
 };
 
 
-constexpr MoveArrays initMoveArrays() {
+consteval MoveArrays initMoveArrays() {
     MoveArrays moves{};  // Value-initialize all arrays
-
-    for (int i = 0; i < 32; i++) {
-        int row = i / 4;        // which board row (0 to 7)
-        int pos = i % 4;        // position within that row (0 to 3)
-        int col = (row % 2 == 0) ? pos * 2 : pos * 2 + 1;  // even row: 0,2,4,6; odd row: 1,3,5,7
-
-        // Helper lambda to calculate destination index
-        constexpr auto calcDestIndex = [](int newRow, int newCol) -> int {
-            if (newRow % 2 == 0) {
-                // Even row: check for even columns
-                if (newCol >= 0 && newCol <= 6 && (newCol % 2 == 0)) {
-                    return newRow * 4 + (newCol / 2);
-                }
-            } else {
-                // Odd row: check for odd columns
-                if (newCol >= 1 && newCol <= 7 && (newCol % 2 == 1)) {
-                    return newRow * 4 + ((newCol - 1) / 2);
-                }
+    for (int i = 0; i < 32; i++)
+    {
+        //setting up the white  man pieces by shifting them down left/right =>  and +4/5  
+        if (i<28)
+        {
+            if (i==3 || 11 || 19||27)
+            {
+            moves.whiteMan[i] |= 1UL << (i + 4);
             }
-            return -1;
-        };
+            else if (i==4||12||20||28)
+            {
+            moves.whiteMan[i] |= 1UL << (i + 4);
+            }
+            else {
+            moves.whiteMan[i] |= 1UL << (i + 4);
+            moves.whiteMan[i] |= 1UL << (i + 5);
+            }
 
-        // Red moves (moving upward)
-        int newRow = row + 1;
-        moves.redMoveLeft[i] = (newRow < 8) ? calcDestIndex(newRow, col - 1) : -1;
-        moves.redMoveRight[i] = (newRow < 8) ? calcDestIndex(newRow, col + 1) : -1;
+        }
+        //setting up the black man pieces by shifting them down left/right => -4/5 
+        if (i>3)
+        {
+            if (i== 4 || 12 || 20 || 28 || 11 || 19 || 27)
+            {
+            moves.blackMan[i] |= 1UL << (i - 4);
+            }
+            else {
+            moves.blackMan[i] |= 1UL << (i - 4);
+            moves.blackMan[i] |= 1UL << (i - 5);
+            }
 
-        // Black moves (moving downward)
-        newRow = row - 1;
-        moves.blackMoveLeft[i] = (newRow >= 0) ? calcDestIndex(newRow, col - 1) : -1;
-        moves.blackMoveRight[i] = (newRow >= 0) ? calcDestIndex(newRow, col + 1) : -1;
-    }
-
+        }
+        }
     return moves;
 }
 
 constexpr auto moves_array = initMoveArrays();
-//--------------------------------------------------------------------
-// Given a bitboard of red pieces and the overall occupied squares,
-// generate the destination squares (as bits) for non‐capturing moves.
-Bitboard generateRedMoves(Bitboard redPieces, Bitboard occupied) {
-    Bitboard moves = 0;
-    for (int i = 0; i < 32; i++) {
-        if (redPieces & (1 << i)) {
-            int dest = moves_array.redMoveLeft[i];
-            if (dest != -1 && ((occupied >> dest) & 1) == 0)
-                moves |= (1 << dest);
-            dest = moves_array.redMoveRight[i];
-            if (dest != -1 && ((occupied >> dest) & 1) == 0)
-                moves |= (1 << dest);
-        }
-    }
-    return moves;
-}
-
-// Similarly, generate moves for black pieces (moving downward).
-Bitboard generateBlackMoves(Bitboard blackPieces, Bitboard occupied) {
-    Bitboard moves = 0;
-    for (int i = 0; i < 32; i++) {
-        if (blackPieces & (1 << i)) {
-            int dest = moves_array.blackMoveLeft[i];
-            if (dest != -1 && ((occupied >> dest) & 1) == 0)
-                moves |= (1 << dest);
-            dest = moves_array.blackMoveRight[i];
-            if (dest != -1 && ((occupied >> dest) & 1) == 0)
-                moves |= (1 << dest);
-        }
-    }
-    return moves;
-}
 
 //--------------------------------------------------------------------
 // Utility: Print the 32-bit board as an 8x8 grid.
 // Only the 32 playable squares are represented by a symbol ('1' if the
 // corresponding bit is set, '.' if not). Non-playable squares are left blank.
 //--------------------------------------------------------------------
+
 void printBoard32(Bitboard board) {
     // Loop over rows 7 (top) to 0 (bottom)
     for (int r = 7; r >= 0; r--) {
@@ -155,8 +123,7 @@ int main() {
     
     Bitboard occupied = redPieces | blackPieces;
     
-    Bitboard redMoves = generateRedMoves(redPieces, occupied);
-    Bitboard blackMoves = generateBlackMoves(blackPieces, occupied);
+
     
     std::cout << "Initial Red Pieces (32-bit):\n";
     printBoard32(redPieces);
@@ -168,11 +135,17 @@ int main() {
     // The empty squares are the 32 bits not set in 'occupied'
     printBoard32(~occupied & 0xFFFFFFFF);
     
-    std::cout << "Generated Red Moves (destinations):\n";
-    printBoard32(redMoves);
-    
-    std::cout << "Generated Black Moves (destinations):\n";
-    printBoard32(blackMoves);
-    
+    std::cout << "All Black man moves:\n";
+    for (int i = 0; i < moves_array.blackMan.size(); i++)
+    {
+        std::cout << i << std::endl;
+    printBoard32(moves_array.blackMan[i]);
+    }
+    std::cout << "All White man moves:\n";
+    for (int i = 0; i < moves_array.whiteMan.size(); i++)
+    {
+        std::cout << i << std::endl;
+    printBoard32(moves_array.whiteMan[i]);
+    }
     return 0;
 }
