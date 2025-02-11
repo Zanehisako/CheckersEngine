@@ -34,11 +34,11 @@ consteval MoveArrays initMoveArrays() {
         //setting up the white  man pieces by shifting them down left/right =>  and +4/5  
         if (i<28)
         {
-            if (i==3 || 11 || 19||27)
+            if (i==3 ||i== 11 ||i== 19||i==27)
             {
             moves.whiteMan[i] |= 1UL << (i + 4);
             }
-            else if (i==4||12||20||28)
+            else if (i==4||i==12||i==20||i==28)
             {
             moves.whiteMan[i] |= 1UL << (i + 4);
             }
@@ -51,7 +51,7 @@ consteval MoveArrays initMoveArrays() {
         //setting up the black man pieces by shifting them down left/right => -4/5 
         if (i>3)
         {
-            if (i== 4 || 12 || 20 || 28 || 11 || 19 || 27)
+            if (i== 4 ||i== 12 ||i== 20 ||i== 28 ||i== 11 ||i== 19 ||i== 27)
             {
             moves.blackMan[i] |= 1UL << (i - 4);
             }
@@ -75,7 +75,7 @@ constexpr auto moves_array = initMoveArrays();
 
 void printBoard32(Bitboard board) {
     // Loop over rows 7 (top) to 0 (bottom)
-    for (int r = 7; r >= 0; r--) {
+    for (int r = 0; r <= 7; r++) {
         for (int c = 0; c < 8; c++) {
             bool playable = false;
             int index = -1;
