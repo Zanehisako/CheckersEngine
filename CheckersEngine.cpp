@@ -1,54 +1,59 @@
 ﻿#include <iostream>
 #include <cstdint>
 #include <array>
+#include <vector>
+#include <bit>
+#include <bitset>
 
 // We now use a 32‐bit bitboard to represent the 32 playable squares.
 using Bitboard = uint32_t;
 
-//--------------------------------------------------------------------
-// Mapping for moves:
-// For each square (0–31) we precompute the destination square (if any)
-// for a move diagonally. (For red pieces, moves are upward; for black,
-// moves are downward.) A value of -1 means no valid move in that direction.
-//--------------------------------------------------------------------
+struct Move {
+    int from;
+    int to;
+    Move(int f,uint8_t t):from(f),to(t){}
+};
 
+std::ostream & operator << (std::ostream & outs, const Move & move) {
+    return outs <<"from:"<< move.from << " to:" << move.to;
+}
 // Initialize the move arrays. Our mapping is based on the idea that
 // the 32 playable squares come from an 8x8 board where:
 //   - Rows are numbered 0 (bottom) to 7 (top)
 //   - Each row has 4 playable squares.
 //   - On even rows (0, 2, 4, 6), playable squares are in columns 0,2,4,6.
 //   - On odd rows (1, 3, 5, 7), playable squares are in columns 1,3,5,7.
-// Move Generation Functions
 struct MoveArrays {
     std::array<Bitboard, 32> whiteMan;
     std::array<Bitboard, 32> blackMan;
-    std::array<Bitboard, 32> whiteKing;
-    std::array<Bitboard, 32> blackKing;
+    std::array<Bitboard, 32> King;
 };
 
+//--------------------------------------------------------------------
+// Utility: initialize the moves array for the white/black man and kings.
+//--------------------------------------------------------------------
 
 consteval MoveArrays initMoveArrays() {
     MoveArrays moves{};  // Value-initialize all arrays
     for (int i = 0; i < 32; i++)
     {
-        //setting up the white  man pieces by shifting them down left/right =>  and +4/5  
+        //setting up the white  man pieces by shifting them down left/right =>  and +3/4   
         if (i<28)
         {
-            if (i==3 ||i== 11 ||i== 19||i==27)
-            {
-            moves.whiteMan[i] |= 1UL << (i + 4);
-            }
-            else if (i==4||i==12||i==20||i==28)
+            if (i==3 ||i== 11 ||i== 19||i==27 || i==4||i==12||i==20||i==28)
             {
             moves.whiteMan[i] |= 1UL << (i + 4);
             }
             else {
+            moves.whiteMan[i] |= 1UL << (i + 3);
             moves.whiteMan[i] |= 1UL << (i + 4);
-            moves.whiteMan[i] |= 1UL << (i + 5);
             }
 
         }
-        //setting up the black man pieces by shifting them down left/right => -4/5 
+        else {
+            moves.whiteMan[i] = 0;
+        }
+        //setting up the black man pieces by shifting them down left/right => -3/4 
         if (i>3)
         {
             if (i== 4 ||i== 12 ||i== 20 ||i== 28 ||i== 11 ||i== 19 ||i== 27)
@@ -56,10 +61,13 @@ consteval MoveArrays initMoveArrays() {
             moves.blackMan[i] |= 1UL << (i - 4);
             }
             else {
+            moves.blackMan[i] |= 1UL << (i - 3);
             moves.blackMan[i] |= 1UL << (i - 4);
-            moves.blackMan[i] |= 1UL << (i - 5);
             }
 
+        }
+        else {
+            moves.blackMan[i] = 0;
         }
         }
     return moves;
@@ -105,6 +113,42 @@ void printBoard32(Bitboard board) {
     std::cout << std::endl;
 }
 
+inline static void MakeMove(Bitboard *board,Move move){
+ 
+    std::cout << "the move is :" << move << std::endl;
+    //this clear the bit
+    *board &= ~(1UL << move.from);
+    //this sets the bit
+    *board |= 1UL << move.to;
+    printBoard32(*board);
+
+}
+
+static void findMoveWhite(Bitboard *whitePiece,Bitboard occupied,Bitboard empty){
+
+    std::vector<Move> legalMoves;
+    for (int i = 0; i < std::countr_one(*whitePiece); i++)
+    {
+        std::cout <<"the moves at "<<i<<":\n"<< std::bitset<32>(moves_array.whiteMan[i]) << std::endl;
+        std::cout <<"empty pieces: \n"<< std::bitset<32>(empty) << std::endl;
+        std::cout << "the result of AND moves and empty: " << std::bitset<32>(moves_array.whiteMan[i] & empty) << std::endl;
+        if ((moves_array.whiteMan[i] & empty) != 0)
+        {
+            legalMoves.push_back(Move(i,std::countl_zero(moves_array.whiteMan[i])));
+            std::cout << "legal moves for " << i<<" : " << legalMoves.back() << std::endl;
+        }
+    }
+    
+    
+    for (auto& legalmove : legalMoves)
+    {
+        MakeMove(whitePiece, legalmove);
+    }
+
+}
+
+
+
 //--------------------------------------------------------------------
 // Main: Set up the initial position and generate moves.
 //--------------------------------------------------------------------
@@ -113,28 +157,30 @@ int main() {
     // Initial positions:
     // We place red pieces on the bottom three rows (rows 0, 1, 2 → indices 0..11)
     // and black pieces on the top three rows (rows 5,6,7 → indices 20..31).
-    Bitboard redPieces = 0;
+    Bitboard whitePieces = 0;
     for (int i = 0; i < 12; i++)
-        redPieces |= (1 << i);
+        whitePieces |= (1 << i);
     
     Bitboard blackPieces = 0;
     for (int i = 20; i < 32; i++)
         blackPieces |= (1 << i);
     
-    Bitboard occupied = redPieces | blackPieces;
+    Bitboard occupied = whitePieces | blackPieces;
+    Bitboard empty= ~occupied&0xFFFFFFFF;
     
 
     
-    std::cout << "Initial Red Pieces (32-bit):\n";
-    printBoard32(redPieces);
+    std::cout << "Initial White Pieces (32-bit):\n";
+    printBoard32(whitePieces);
     
     std::cout << "Initial Black Pieces (32-bit):\n";
     printBoard32(blackPieces);
     
     std::cout << "Empty Playable Squares:\n";
     // The empty squares are the 32 bits not set in 'occupied'
-    printBoard32(~occupied & 0xFFFFFFFF);
+    printBoard32(empty);
     
+    /*
     std::cout << "All Black man moves:\n";
     for (int i = 0; i < moves_array.blackMan.size(); i++)
     {
@@ -146,6 +192,11 @@ int main() {
     {
         std::cout << i << std::endl;
     printBoard32(moves_array.whiteMan[i]);
-    }
+    }*/
+    findMoveWhite(&whitePieces, occupied, empty);
+    std::cout << "White Pieces (32-bit):\n";
+    printBoard32(whitePieces);
+    std::cout << "it took" << (float)(clock() - before) / CLOCKS_PER_SEC << std::endl;
+
     return 0;
 }
