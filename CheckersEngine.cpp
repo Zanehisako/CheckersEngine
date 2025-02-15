@@ -40,10 +40,14 @@ std::ostream & operator << (std::ostream & outs, const Move & move) {
 //   - On even rows (0, 2, 4, 6), playable squares are in columns 0,2,4,6.
 //   - On odd rows (1, 3, 5, 7), playable squares are in columns 1,3,5,7.
 struct MoveArrays {
-    std::array<Bitboard, 32> whiteMan;
-    std::array<Bitboard, 32> whiteManCaptures;
-    std::array<Bitboard, 32> blackMan;
-    std::array<Bitboard, 32> blackManCaptures;
+    std::array<Bitboard, 32> whiteManLeft;
+    std::array<Bitboard, 32> whiteManRight;
+    std::array<Bitboard, 32> whiteManCapturesLeft;
+    std::array<Bitboard, 32> whiteManCapturesRight;
+    std::array<Bitboard, 32> blackManLeft;
+    std::array<Bitboard, 32> blackManRight;
+    std::array<Bitboard, 32> blackManCapturesLeft;
+    std::array<Bitboard, 32> blackManCapturesRight;
     std::array<Bitboard, 32> King;
 };
 
@@ -91,61 +95,65 @@ consteval MoveArrays initMoveArrays() {
         {
             if (EDGES[i])
             {
-            moves.whiteMan[i] |= 1u << (i + 4);
-            moves.whiteManCaptures[i] |= 1u << (i + 4);
+            moves.whiteManLeft[i] |= 1u << (i + 4);
+            moves.whiteManCapturesLeft[i] |= 1u << (i + 4);
             }
             else {
-            moves.whiteMan[i] |= 1u << (i + 5);
-            moves.whiteMan[i] |= 1u << (i + 4);
+            moves.whiteManRight[i] |= 1u << (i + 5);
+            moves.whiteManLeft[i] |= 1u << (i + 4);
             }
             if (i+9<32)
             {
 				if (!RIGHT_EDGE[i])
                 {
-                    moves.whiteManCaptures[i] |= 1u << (i + 9);
+                    moves.whiteManCapturesRight[i] |= 1u << (i + 9);
 
                 }
 				if (!LEFT_EDGE[i])
                 {
-                    moves.whiteManCaptures[i] |= 1u << (i + 7);
+                    moves.whiteManCapturesLeft[i] |= 1u << (i + 7);
                 }
             }
 
         }
         else {
-            moves.whiteMan[i] = 0;
-            moves.whiteManCaptures[i] = 0;
+            moves.whiteManRight[i] = 0;
+            moves.whiteManLeft[i] = 0;
+            moves.whiteManCapturesRight[i] = 0;
+            moves.whiteManCapturesLeft[i] = 0;
         }
         //setting up the black man pieces by shifting them down left/right => -3/4 
         if (i>3)
         {
             if (i== 4 ||i== 12 ||i== 20 ||i== 28 ||i== 11 ||i== 19 ||i== 27)
             {
-            moves.blackMan[i] |= 1u << (i - 4);
+            moves.blackManRight[i] |= 1u << (i - 4);
             }
             else {
-            moves.blackMan[i] |= 1u << (i - 5);
-            moves.blackMan[i] |= 1u << (i - 4);
+            moves.blackManLeft[i] |= 1u << (i - 5);
+            moves.blackManRight[i] |= 1u << (i - 4);
             if (!LEFT_EDGE[i])
             {
 				if (i - 8 >= 0)
 				{
-					moves.blackManCaptures[i] |= 1u << (i - 8);
+					moves.blackManCapturesLeft[i] |= 1u << (i - 8);
 				}
             }
             if (!RIGHT_EDGE[i])
             {
 				if (i - 6 >= 0)
 				{
-					moves.blackManCaptures[i] |= 1u << (i - 6);
+					moves.blackManCapturesRight[i] |= 1u << (i - 6);
 				}
             }
             }
 
         }
         else {
-            moves.blackMan[i] = 0;
-            moves.blackManCaptures[i] = 0;
+            moves.blackManLeft[i] = 0;
+            moves.blackManRight[i] = 0;
+            moves.blackManCapturesLeft[i] = 0;
+            moves.blackManCapturesRight[i] = 0;
         }
         }
     return moves;
@@ -354,29 +362,27 @@ void findMoveWhite(Bitboard *whitePiece,Bitboard occupied,Bitboard empty){
         std::cout <<"empty pieces: \n"<< std::bitset<32>(empty) << std::endl;
         std::cout << "the result of AND moves and empty: " << std::bitset<32>(moves_array.whiteMan[i] & empty) << std::endl;
 */
-        if ((moves_array.whiteMan[i] & empty) != 0)
+        if ((moves_array.whiteManLeft[i] & empty) != 0)
         {
             /*
             std::cout << "legal move first: " << std::countr_zero(moves_array.whiteMan[i])<<std::endl;;
             std::cout << "legal move second: " <<BITBOARD_SIZE- std::countl_zero(moves_array.whiteMan[i])<<std::endl;
 */
-            legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteMan[i])));
-            legalMoves.push_back(Move(i,BITBOARD_SIZE- std::countl_zero(moves_array.whiteMan[i])));
+            legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
  //           std::cout << "legal moves for " << i<<" : " << legalMoves.back() << std::endl;
-            MakeMove(i,whitePiece,);
+            MakeMove(i,whitePiece,MoveType::DLMove);
         }
 
-        if ((moves_array.whiteManCaptures[i] & empty) != 0)
+        if ((moves_array.whiteManRight[i] & empty) != 0)
         {
             /*
             std::cout << "legal move first: " << std::countr_zero(moves_array.whiteMan[i])<<std::endl;;
             std::cout << "legal move second: " <<BITBOARD_SIZE- std::countl_zero(moves_array.whiteMan[i])<<std::endl;
 */
-            legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManCaptures[i])));
-            legalMoves.push_back(Move(i,BITBOARD_SIZE- std::countl_zero(moves_array.whiteManCaptures[i])));
+            legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManRight[i])));
  //           std::cout << "legal moves for " << i<<" : " << legalMoves.back() << std::endl;
 
-            MakeMove(whitePiece, legalmove);
+            MakeMove(i,whitePiece, MoveType::DLCapture);
         }
     }
     
@@ -409,25 +415,26 @@ void findMoveBlack(Bitboard *blackPiece,Bitboard occupied,Bitboard empty){
         std::cout <<"empty pieces: \n"<< std::bitset<32>(empty) << std::endl;
         std::cout << "the result of AND moves and empty: " << std::bitset<32>(moves_array.blackMan[i] & empty) << std::endl;
 */
-        if ((moves_array.blackMan[i] & empty) != 0)
+        if ((moves_array.blackManLeft[i] & empty) != 0)
         {
             /*
             std::cout << "legal move first: " << std::countr_zero(moves_array.blackMan[i])<<std::endl;;
             std::cout << "legal move second: " <<BITBOARD_SIZE- std::countl_zero(moves_array.blackMan[i])<<std::endl;
 */
-            legalMoves.push_back(Move(i,std::countr_zero(moves_array.blackMan[i])));
-            legalMoves.push_back(Move(i,BITBOARD_SIZE- std::countl_zero(moves_array.blackMan[i])));
+            legalMoves.push_back(Move(i,std::countr_zero(moves_array.blackManLeft[i])));
+ //           std::cout << "legal moves for " << i<<" : " << legalMoves.back() << std::endl;
+        }
+        if ((moves_array.blackManRight[i] & empty) != 0)
+        {
+            /*
+            std::cout << "legal move first: " << std::countr_zero(moves_array.blackMan[i])<<std::endl;;
+            std::cout << "legal move second: " <<BITBOARD_SIZE- std::countl_zero(moves_array.blackMan[i])<<std::endl;
+*/
+        MakeMove(i,blackPiece,MoveType::ULMove);
  //           std::cout << "legal moves for " << i<<" : " << legalMoves.back() << std::endl;
         }
     }
     
-    
-    for (auto& legalmove : legalMoves)
-    {
-        std::cout << legalmove << std::endl;
-        MakeMove(blackPiece, legalmove);
-    }
-
 }
 
 
@@ -461,7 +468,7 @@ int main() {
     printBitBoard(blackPieces);
 
     std::cout << "Initial White Pieces captures (32-bit):\n";
-    for (auto c : moves_array.whiteManCaptures) {
+    for (auto c : moves_array.whiteManCapturesLeft) {
         std::cout << std::bitset<32>(c) << std::endl;
     }
     
