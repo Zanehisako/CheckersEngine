@@ -10,11 +10,24 @@ constexpr auto BITBOARD_SIZE = 31;
 // We now use a 32‐bit bitboard to represent the 32 playable squares.
 
 using Bitboard = uint32_t;
+enum MoveType
+{
+    URCapture,
+    ULCapture,
+    DRCapture,
+    DLCapture,
+    URMove,
+    ULMove,
+    DRMove,
+    DLMove,
+};
+
 
 struct Move {
-    int from;
-    int to;
-    Move(int f,uint8_t t):from(f),to(t){}
+    uint8_t from;
+    uint8_t to;
+
+    Move(uint8_t f,uint8_t t):from(f),to(t){}
 };
 
 std::ostream & operator << (std::ostream & outs, const Move & move) {
@@ -41,36 +54,35 @@ struct MoveArrays {
 
 consteval MoveArrays initMoveArrays() {
     MoveArrays moves{};  // Value-initialize all arrays
-    constexpr bool LEFT_EDGE_CAPTURE[32] = {
-        true,true,false,false,
-        true,true,false,false,
-        true,true,false,false,
-        true,true,false,false,
-        true,true,false,false,
-        true,true,false,false,
-        true,true,false,false,
-        true,true,false,false,
-    };
-    constexpr bool RIGHT_EDGE_CAPTURE[32] = {
-        false,false,true,true,
-        false,false,true,true,
-        false,false,true,true,
-        false,false,true,true,
-        false,false,true,true,
-        false,false,true,true,
-        false,false,true,true,
-        false,false,true,true,
+    constexpr bool LEFT_EDGE[32] = {
+        true,false,false,false,
+        true,false,false,false,
+        true,false,false,false,
+        true,false,false,false,
+        true,false,false,false,
+        true,false,false,false,
+        true,false,false,false,
+        true,false,false,false,
+    }; constexpr bool RIGHT_EDGE[32] = {
+        false,false,false,true,
+        false,false,false,true,
+        false,false,false,true,
+        false,false,false,true,
+        false,false,false,true,
+        false,false,false,true,
+        false,false,false,true,
+        false,false,false,true,
     };
 
     constexpr bool EDGES[32] = {
         true,false,false,true,
-        true,false,false,true,
-        true,false,false,true,
-        true,false,false,true,
-        true,false,false,true,
-        true,false,false,true,
-        true,false,false,true,
-        true,false,false,true,
+        true,false,false,false,
+        false,false,false,true,
+        true,false,false,false,
+        false,false,false,true,
+        true,false,false,false,
+        false,false,false,true,
+        true,false,false,false,
     };
     for (int i = 0; i < 32; i++)
     {
@@ -85,17 +97,15 @@ consteval MoveArrays initMoveArrays() {
             else {
             moves.whiteMan[i] |= 1u << (i + 5);
             moves.whiteMan[i] |= 1u << (i + 4);
-            moves.whiteManCaptures[i] |= 1u << (i + 5);
-            moves.whiteManCaptures[i] |= 1u << (i + 4);
             }
             if (i+9<32)
             {
-				if (!RIGHT_EDGE_CAPTURE[i])
+				if (!RIGHT_EDGE[i])
                 {
                     moves.whiteManCaptures[i] |= 1u << (i + 9);
 
                 }
-				if (!LEFT_EDGE_CAPTURE[i])
+				if (!LEFT_EDGE[i])
                 {
                     moves.whiteManCaptures[i] |= 1u << (i + 7);
                 }
@@ -112,19 +122,18 @@ consteval MoveArrays initMoveArrays() {
             if (i== 4 ||i== 12 ||i== 20 ||i== 28 ||i== 11 ||i== 19 ||i== 27)
             {
             moves.blackMan[i] |= 1u << (i - 4);
-            moves.blackManCaptures[i] |= 1u << (i - 4);
             }
             else {
             moves.blackMan[i] |= 1u << (i - 5);
             moves.blackMan[i] |= 1u << (i - 4);
-            if (!LEFT_EDGE_CAPTURE[i])
+            if (!LEFT_EDGE[i])
             {
 				if (i - 8 >= 0)
 				{
 					moves.blackManCaptures[i] |= 1u << (i - 8);
 				}
             }
-            if (!RIGHT_EDGE_CAPTURE[i])
+            if (!RIGHT_EDGE[i])
             {
 				if (i - 6 >= 0)
 				{
@@ -186,28 +195,142 @@ void printBitBoard(uint32_t board) {
     }
 }
 
-inline static void MakeMove(Bitboard *board,Move move){
- 
-    std::cout << "the move is :" << move << std::endl;
-    //this clear the bit
-    *board &= ~(1UL << move.from);
-    //this sets the bit
-    *board |= 1UL << move.to;
-    printBitBoard(*board);
-
+inline static bool isURcapture(Bitboard board, Bitboard empty) {
+    //(empty& (1u >> 4)) ==0  
+    if ((empty& (1u >> 4)) ==0)
+    {
+        if ((board & empty) !=0)
+        {
+            return MoveType::URCapture;
+        }
+    }
+    return MoveType::URMove;
 }
 
-inline static void findCaptures(Bitboard *board,Move move){
- 
-    //XOR => ^=
-    std::cout << "the move is :" << move << std::endl;
-    //this clear the bit
-    *board &= ~(1UL << move.from);
-    //this sets the bit
-    *board |= 1UL << move.to;
-    printBitBoard(*board);
-
+inline static bool isULcapture(Bitboard board, Bitboard empty) {
+    //(empty& (1u >> 4)) ==0  
+    if ((empty& (1u >> 4)) ==0)
+    {
+        if ((board & empty) !=0)
+        {
+            return MoveType::ULCapture;
+        }
+    }
+    return MoveType::ULMove;
 }
+
+inline static bool isDRcapture(Bitboard board, Bitboard empty) {
+    //(empty& (1u >> 4)) ==0  
+    if ((empty& (1u >> 4)) ==0)
+    {
+        if ((board & empty) !=0)
+        {
+            return MoveType::DRCapture;
+        }
+    }
+    return MoveType::DRMove;
+}
+
+inline static bool isDLcapture(Bitboard board, Bitboard empty) {
+    //(empty& (1u >> 4)) ==0  
+    if ((empty& (1u >> 4)) ==0)
+    {
+        if ((board & empty) !=0)
+        {
+            return MoveType::DLCapture;
+        }
+    }
+    return MoveType::DLMove;
+}
+
+
+template<typename T>
+inline void MakeMove(uint8_t from,Bitboard* board,  T move_type)
+{
+}
+
+template <>
+inline static void MakeMove<MoveType>(uint8_t from,Bitboard* board, MoveType move_type) {
+
+	switch (move_type)
+	{
+	case URCapture:
+
+		//this clear the bit
+		*board &= ~(1UL << from);
+		//this clear the bit between the jump
+		*board &= ~(1UL << from - 3);
+		//this sets the bit
+		*board |= (1UL << (from - 6));
+		printBitBoard(*board);
+		break;
+
+	case ULCapture:
+		//this clear the bit
+		*board &= ~(1UL << from);
+		//this clear the bit between the jump
+		*board &= ~(1UL << from - 4);
+		//this sets the bit
+		*board |= (1UL << (from - 8));
+		printBitBoard(*board);
+		break;
+
+	case DRCapture:
+		//this clear the bit
+		*board &= ~(1UL << from);
+		//this clear the bit between the jump
+		*board &= ~(1UL << from + 5);
+		//this sets the bit
+		*board |= (1UL << (from + 9));
+		printBitBoard(*board);
+		break;
+
+	case DLCapture:
+		//this clear the bit
+		*board &= ~(1UL << from);
+		//this clear the bit between the jump
+		*board &= ~(1UL << from + 4);
+		//this sets the bit
+		*board |= (1UL << (from + 7));
+		printBitBoard(*board);
+		break;
+
+	case URMove:
+		//this clear the bit
+		*board &= ~(1UL << from);
+		//this sets the bit
+		*board |= 1UL << (from-3);
+		printBitBoard(*board);
+		break;
+
+	case ULMove:
+		//this clear the bit
+		*board &= ~(1UL << from);
+		//this sets the bit
+		*board |= 1UL << (from-4);
+		printBitBoard(*board);
+		break;
+	case DRMove:
+		//this clear the bit
+		*board &= ~(1UL << from);
+		//this sets the bit
+		*board |= 1UL << (from+4);
+		printBitBoard(*board);
+		break;
+	case DLMove:
+		//this clear the bit
+		*board &= ~(1UL << from);
+		//this sets the bit
+		*board |= 1UL << (from+3);
+		printBitBoard(*board);
+		break;
+	default:
+		break;
+	}
+}
+
+
+
 
 void findMoveWhite(Bitboard *whitePiece,Bitboard occupied,Bitboard empty){
 
@@ -231,6 +354,18 @@ void findMoveWhite(Bitboard *whitePiece,Bitboard occupied,Bitboard empty){
         std::cout <<"empty pieces: \n"<< std::bitset<32>(empty) << std::endl;
         std::cout << "the result of AND moves and empty: " << std::bitset<32>(moves_array.whiteMan[i] & empty) << std::endl;
 */
+        if ((moves_array.whiteMan[i] & empty) != 0)
+        {
+            /*
+            std::cout << "legal move first: " << std::countr_zero(moves_array.whiteMan[i])<<std::endl;;
+            std::cout << "legal move second: " <<BITBOARD_SIZE- std::countl_zero(moves_array.whiteMan[i])<<std::endl;
+*/
+            legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteMan[i])));
+            legalMoves.push_back(Move(i,BITBOARD_SIZE- std::countl_zero(moves_array.whiteMan[i])));
+ //           std::cout << "legal moves for " << i<<" : " << legalMoves.back() << std::endl;
+            MakeMove(i,whitePiece,);
+        }
+
         if ((moves_array.whiteManCaptures[i] & empty) != 0)
         {
             /*
@@ -240,17 +375,19 @@ void findMoveWhite(Bitboard *whitePiece,Bitboard occupied,Bitboard empty){
             legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManCaptures[i])));
             legalMoves.push_back(Move(i,BITBOARD_SIZE- std::countl_zero(moves_array.whiteManCaptures[i])));
  //           std::cout << "legal moves for " << i<<" : " << legalMoves.back() << std::endl;
+
+            MakeMove(whitePiece, legalmove);
         }
     }
     
     
     for (auto& legalmove : legalMoves)
     {
-        std::cout << legalmove << std::endl;
-        MakeMove(whitePiece, legalmove);
     }
 
 }
+
+
 
 void findMoveBlack(Bitboard *blackPiece,Bitboard occupied,Bitboard empty){
 
@@ -348,3 +485,4 @@ int main() {
 
     return 0;
 }
+
