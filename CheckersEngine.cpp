@@ -221,10 +221,10 @@ inline static bool isULcapture(Bitboard board, Bitboard empty) {
     {
         if ((board & empty) !=0)
         {
-            return MoveType::ULCapture;
+            return true;
         }
     }
-    return MoveType::ULMove;
+    return false;
 }
 
 inline static bool isDRcapture(Bitboard board, Bitboard empty) {
@@ -233,10 +233,10 @@ inline static bool isDRcapture(Bitboard board, Bitboard empty) {
     {
         if ((board & empty) !=0)
         {
-            return MoveType::DRCapture;
+            return true;
         }
     }
-    return MoveType::DRMove;
+    return false;
 }
 
 inline static bool isDLcapture(Bitboard board, Bitboard empty) {
@@ -245,10 +245,10 @@ inline static bool isDLcapture(Bitboard board, Bitboard empty) {
     {
         if ((board & empty) !=0)
         {
-            return MoveType::DLCapture;
+            return true;
         }
     }
-    return MoveType::DLMove;
+    return false;
 }
 
 
@@ -357,40 +357,29 @@ void findMoveWhite(Bitboard *whitePiece,Bitboard occupied,Bitboard empty){
 */
     for (int i = std::countr_zero(ActivePieces); i <= BITBOARD_SIZE-std::countl_zero(ActivePieces); i++)
     {
-        /*
-        std::cout <<"the moves at "<<i<<":\n"<< std::bitset<32>(moves_array.whiteMan[i]) << std::endl;
-        std::cout <<"empty pieces: \n"<< std::bitset<32>(empty) << std::endl;
-        std::cout << "the result of AND moves and empty: " << std::bitset<32>(moves_array.whiteMan[i] & empty) << std::endl;
-*/
-        if ((moves_array.whiteManLeft[i] & empty) != 0)
+        if (isDLcapture(moves_array.whiteManLeft[i],empty))
         {
-            /*
-            std::cout << "legal move first: " << std::countr_zero(moves_array.whiteMan[i])<<std::endl;;
-            std::cout << "legal move second: " <<BITBOARD_SIZE- std::countl_zero(moves_array.whiteMan[i])<<std::endl;
-*/
             legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
- //           std::cout << "legal moves for " << i<<" : " << legalMoves.back() << std::endl;
+            MakeMove(i,whitePiece,MoveType::DLCapture);
+        }
+
+        if (isDRcapture(moves_array.whiteManLeft[i],empty))
+        {
+            legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
+            MakeMove(i,whitePiece,MoveType::DRCapture);
+        }
+        if ((moves_array.whiteManLeft[i]&empty) !=0)
+        {
+            legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
             MakeMove(i,whitePiece,MoveType::DLMove);
         }
-
-        if ((moves_array.whiteManRight[i] & empty) != 0)
+        if ((moves_array.whiteManRight[i]&empty) !=0)
         {
-            /*
-            std::cout << "legal move first: " << std::countr_zero(moves_array.whiteMan[i])<<std::endl;;
-            std::cout << "legal move second: " <<BITBOARD_SIZE- std::countl_zero(moves_array.whiteMan[i])<<std::endl;
-*/
-            legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManRight[i])));
- //           std::cout << "legal moves for " << i<<" : " << legalMoves.back() << std::endl;
-
-            MakeMove(i,whitePiece, MoveType::DLCapture);
+            legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
+            MakeMove(i,whitePiece,MoveType::DRMove);
         }
-    }
-    
-    
-    for (auto& legalmove : legalMoves)
-    {
-    }
 
+    }
 }
 
 
@@ -399,40 +388,30 @@ void findMoveBlack(Bitboard *blackPiece,Bitboard occupied,Bitboard empty){
 
     std::vector<Move> legalMoves;
     Bitboard ActivePieces = *blackPiece & blackActive;
-/*
-    std::cout << "moves at 11:\n" << std::bitset<32>(moves_array.blackMan[11]) << std::endl;
-    std::cout << "moves at 8:\n" << std::bitset<32>(moves_array.blackMan[8]) << std::endl;
-    std::cout << std::bitset<32>(ActivePieces) << std::endl;
-    std::cout << std::countr_zero(ActivePieces) << std::endl;
-    std::cout << "the index of first 1 starting form most significant bit\n";
-    std::cout << std::countl_zero(ActivePieces) << std::endl;
-    std::cout << "the index of first 1 starting form least significant bit\n";
-*/
     for (int i = std::countr_zero(ActivePieces); i <= BITBOARD_SIZE-std::countl_zero(ActivePieces); i++)
     {
-        /*
-        std::cout <<"the moves at "<<i<<":\n"<< std::bitset<32>(moves_array.blackMan[i]) << std::endl;
-        std::cout <<"empty pieces: \n"<< std::bitset<32>(empty) << std::endl;
-        std::cout << "the result of AND moves and empty: " << std::bitset<32>(moves_array.blackMan[i] & empty) << std::endl;
-*/
-        if ((moves_array.blackManLeft[i] & empty) != 0)
+        if (isDLcapture(moves_array.blackManLeft[i],empty))
         {
-            /*
-            std::cout << "legal move first: " << std::countr_zero(moves_array.blackMan[i])<<std::endl;;
-            std::cout << "legal move second: " <<BITBOARD_SIZE- std::countl_zero(moves_array.blackMan[i])<<std::endl;
-*/
             legalMoves.push_back(Move(i,std::countr_zero(moves_array.blackManLeft[i])));
- //           std::cout << "legal moves for " << i<<" : " << legalMoves.back() << std::endl;
+            MakeMove(i,blackPiece,MoveType::DLCapture);
         }
-        if ((moves_array.blackManRight[i] & empty) != 0)
+
+        if (isDRcapture(moves_array.blackManLeft[i],empty))
         {
-            /*
-            std::cout << "legal move first: " << std::countr_zero(moves_array.blackMan[i])<<std::endl;;
-            std::cout << "legal move second: " <<BITBOARD_SIZE- std::countl_zero(moves_array.blackMan[i])<<std::endl;
-*/
-        MakeMove(i,blackPiece,MoveType::ULMove);
- //           std::cout << "legal moves for " << i<<" : " << legalMoves.back() << std::endl;
+            legalMoves.push_back(Move(i,std::countr_zero(moves_array.blackManLeft[i])));
+            MakeMove(i,blackPiece,MoveType::DRCapture);
         }
+        if ((moves_array.blackManLeft[i]&empty) !=0)
+        {
+            legalMoves.push_back(Move(i,std::countr_zero(moves_array.blackManLeft[i])));
+            MakeMove(i,blackPiece,MoveType::DLMove);
+        }
+        if ((moves_array.blackManRight[i]&empty) !=0)
+        {
+            legalMoves.push_back(Move(i,std::countr_zero(moves_array.blackManLeft[i])));
+            MakeMove(i,blackPiece,MoveType::DRMove);
+        }
+
     }
     
 }
