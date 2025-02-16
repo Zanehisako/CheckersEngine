@@ -253,12 +253,12 @@ inline static bool isDLcapture(Bitboard board, Bitboard empty) {
 
 
 template<typename T>
-inline void MakeMove(uint8_t from,Bitboard* board,  T move_type)
+inline void MakeMove(uint8_t from,Bitboard* board,Bitboard active,  T move_type)
 {
 }
 
 template <>
-inline static void MakeMove<MoveType>(uint8_t from,Bitboard* board, MoveType move_type) {
+inline static void MakeMove<MoveType>(uint8_t from,Bitboard* board,Bitboard active, MoveType move_type) {
 
 	switch (move_type)
 	{
@@ -271,6 +271,7 @@ inline static void MakeMove<MoveType>(uint8_t from,Bitboard* board, MoveType mov
 		//this sets the bit
 		*board |= (1UL << (from - 6));
 		printBitBoard(*board);
+        findMoveWhite(board,);
 		break;
 
 	case ULCapture:
@@ -415,6 +416,27 @@ void findMoveBlack(Bitboard *blackPiece,Bitboard occupied,Bitboard empty){
     }
     
 }
+// Optimized recursive minimax using the contiguous tree.
+int recursiveMinimaxContiguous(int index, int depth, bool isMaximizing) {
+  const Node &node = treeNodes[index];
+  if (node.isLeaf || depth == 0)
+    return node.value;
+
+  int bestValue;
+  if (isMaximizing) {
+    bestValue = numeric_limits<int>::min();
+    for (int childIndex : node.children)
+      bestValue = max(bestValue,
+                      recursiveMinimaxContiguous(childIndex, depth - 1, false));
+  } else {
+    bestValue = numeric_limits<int>::max();
+    for (int childIndex : node.children)
+      bestValue = min(bestValue,
+                      recursiveMinimaxContiguous(childIndex, depth - 1, true));
+  }
+  return bestValue;
+}
+
 
 
 
