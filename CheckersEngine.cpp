@@ -32,6 +32,33 @@ struct Move {
     Move(uint8_t f,uint8_t t):from(f),to(t){}
 };
 
+
+std::ostream & operator << (std::ostream & outs, const Move & move) {
+    return outs <<"from:"<< move.from << " to:" << move.to;
+}
+
+struct GameState {
+	Bitboard white;
+	Bitboard whiteMask;
+	Bitboard black;
+	Bitboard blackMask;
+	Bitboard kings;
+	Bitboard kingsMask;
+    Bitboard empty;
+
+	GameState(
+		Bitboard w,
+		Bitboard wMask,
+		Bitboard b,
+		Bitboard bMask,
+		Bitboard k,
+		Bitboard kMask,
+		Bitboard e 
+	) :white(w), whiteMask(wMask), black(b), blackMask(bMask), kings(k), kingsMask(kMask),empty(e) {
+	}
+};
+
+
 std::ostream & operator << (std::ostream & outs, const Move & move) {
     return outs <<"from:"<< move.from << " to:" << move.to;
 }
@@ -338,68 +365,120 @@ static const MaskFunction mask_functions[] = {
     &MaskDLMove,
 };
 
-using MoveFunction = void(*)(uint8_t from, Bitboard* board);
+using MoveFunction = void(*)(uint8_t from, Bitboard* white,Bitboard* black);
 
 
-inline static void MakeURCapture(uint8_t from,Bitboard* board) {
+inline static void MakeURCaptureWhite(uint8_t from, Bitboard* white,Bitboard* black) {
 		//this clear the bit
-		*board &= ~(1UL << from);
+		*white &= ~(1UL << from);
+        //clears the captured pieces's bit
+		*black &= (1UL << (from - 6));
 		//this clear the bit between the jump
-		*board &= ~(1UL << from - 3);
+		*white &= ~(1UL << from - 3);
 		//this sets the bit
-		*board |= (1UL << (from - 6));
+		*white |= (1UL << (from - 6));
 }
 
-inline static void MakeULCapture(uint8_t from,Bitboard* board) {
+inline static void MakeULCaptureWhite(uint8_t from, Bitboard* white,Bitboard* black) {
 		//this clear the bit
-		*board &= ~(1UL << from);
+		*white &= ~(1UL << from);
+        //clears the captured pieces's bit
+		*black &= (1UL << (from - 8));
 		//this clear the bit between the jump
-		*board &= ~(1UL << from - 4);
+		*white &= ~(1UL << from - 4);
 		//this sets the bit
-		*board |= (1UL << (from - 8));
-		printBitBoard(*board);
+		*white |= (1UL << (from - 8));
 
 }
 
-inline static void MakeDRCapture(uint8_t from,Bitboard* board) {
+inline static void MakeDRCaptureWhite(uint8_t from, Bitboard* white,Bitboard* black) {
 		//this clear the bit
-		*board &= ~(1UL << from);
+		*white &= ~(1UL << from);
+        //clears the captured pieces's bit
+		*black &= (1UL << (from + 9));
 		//this clear the bit between the jump
-		*board &= ~(1UL << from + 5);
+		*white &= ~(1UL << from + 5);
 		//this sets the bit
-		*board |= (1UL << (from + 9));
+		*white |= (1UL << (from + 9));
 }
 
-inline static void MakeDLCapture(uint8_t from,Bitboard* board) {
+inline static void MakeDLCaptureWhite(uint8_t from, Bitboard* white,Bitboard* black) {
 		//this clear the bit
-		*board &= ~(1UL << from);
+		*white &= ~(1UL << from);
+        //clears the captured pieces's bit
+		*black &= (1UL << (from + 7));
 		//this clear the bit between the jump
-		*board &= ~(1UL << from + 4);
+		*white &= ~(1UL << from + 4);
 		//this sets the bit
-		*board |= (1UL << (from + 7));
+		*white |= (1UL << (from + 7));
 }
 
-inline static void MakeULMove(uint8_t from,Bitboard* board) {
+inline static void MakeURCaptureBlack(uint8_t from,Bitboard* black,Bitboard* white) {
+		//this clear the bit
+		*black &= ~(1UL << from);
+        //clears the captured pieces's bit
+		*white &= (1UL << (from - 6));
+		//this clear the bit between the jump
+		*black &= ~(1UL << from - 3);
+		//this sets the bit
+		*black |= (1UL << (from - 6));
+}
+
+inline static void MakeULCaptureBlack(uint8_t from,Bitboard* black,Bitboard* white) {
+		//this clear the bit
+		*black &= ~(1UL << from);
+        //clears the captured pieces's bit
+		*white &= (1UL << (from - 8));
+		//this clear the bit between the jump
+		*black &= ~(1UL << from - 4);
+		//this sets the bit
+		*black |= (1UL << (from - 8));
+
+}
+
+inline static void MakeDRCaptureBlack(uint8_t from,Bitboard* black,Bitboard* white) {
+		//this clear the bit
+		*black &= ~(1UL << from);
+        //clears the captured pieces's bit
+		*white &= (1UL << (from + 9));
+		//this clear the bit between the jump
+		*black &= ~(1UL << from + 5);
+		//this sets the bit
+		*black |= (1UL << (from + 9));
+}
+
+inline static void MakeDLCaptureBlack(uint8_t from,Bitboard* black,Bitboard* white) {
+		//this clear the bit
+		*black &= ~(1UL << from);
+        //clears the captured pieces's bit
+		*white &= (1UL << (from + 7));
+		//this clear the bit between the jump
+		*black &= ~(1UL << from + 4);
+		//this sets the bit
+		*black |= (1UL << (from + 7));
+}
+
+inline static void MakeULMove(uint8_t from,Bitboard* board,Bitboard* o= nullptr) {
 		//this clear the bit
 		*board &= ~(1UL << from);
 		//this sets the bit
 		*board |= 1UL << (from-4);
 }
-inline static void MakeURMove(uint8_t from,Bitboard* board) {
+inline static void MakeURMove(uint8_t from,Bitboard* board,Bitboard* o= nullptr) {
 		//this clear the bit
 		*board &= ~(1UL << from);
 		//this sets the bit
 		*board |= 1UL << (from-3);
 }
 
-inline static void MakeDLMove(uint8_t from,Bitboard* board) {
+inline static void MakeDLMove(uint8_t from,Bitboard* board,Bitboard* o= nullptr) {
 		//this clear the bit
 		*board &= ~(1UL << from);
 		//this sets the bit
 		*board |= 1UL << (from+3);
 }
 
-inline static void MakeDRMove(uint8_t from,Bitboard* board) {
+inline static void MakeDRMove(uint8_t from,Bitboard* board,Bitboard* o= nullptr) {
 		//this clear the bit
 		*board &= ~(1UL << from);
 		//this sets the bit
@@ -408,60 +487,61 @@ inline static void MakeDRMove(uint8_t from,Bitboard* board) {
 
 
 // Create lookup table
-static const MoveFunction move_functions[] = {
-    &MakeURCapture,
-    &MakeULCapture,
-    &MakeDRCapture,
-    &MakeDLCapture,
+static const MoveFunction move_functions_white[] = {
+    &MakeURCaptureWhite,
+    &MakeULCaptureWhite,
+    &MakeDRCaptureWhite,
+    &MakeDLCaptureWhite,
+    &MakeURMove,
+    &MakeULMove,
+    &MakeDRMove,
+    &MakeDLMove,
+};
+static const MoveFunction move_functions_black[] = {
+    &MakeURCaptureBlack,
+    &MakeULCaptureBlack,
+    &MakeDRCaptureBlack,
+    &MakeDLCaptureBlack,
     &MakeURMove,
     &MakeULMove,
     &MakeDRMove,
     &MakeDLMove,
 };
 
-inline void MakeMove(uint8_t from,Bitboard* mask, Bitboard* board, Bitboard* active, MoveType move_type) {
-    move_functions[static_cast<int>(move_type)](from, board);
-    mask_functions[static_cast<int>(move_type)](from, mask,board, active);
+inline void MakeMoveWhite(uint8_t from,GameState game_state, MoveType move_type) {
+    move_functions_white[static_cast<int>(move_type)](from, &game_state.white,&game_state.black);
+    mask_functions[static_cast<int>(move_type)](from, mask,whiteBoard, whiteActive);
+    findMoveWhite(whiteBoard, empty);
 }
 
 
-void findMoveWhite(Bitboard *whitePiece,Bitboard occupied,Bitboard empty){
+void findMoveWhite(Bitboard *whitePiece,Bitboard* empty){
 
     std::vector<Move> legalMoves;
     Bitboard ActivePieces = *whitePiece & whiteActive;
-/*
-    std::cout << "Active pieces:\n";
-    printBitBoard(ActivePieces);
-    std::cout << "moves at 11:\n" << std::bitset<32>(moves_array.whiteMan[11]) << std::endl;
-    std::cout << "moves at 8:\n" << std::bitset<32>(moves_array.whiteMan[8]) << std::endl;
-    std::cout << std::bitset<32>(ActivePieces) << std::endl;
-    std::cout << std::countr_zero(ActivePieces) << std::endl;
-    std::cout << "the index of first 1 starting form most significant bit\n";
-    std::cout << std::countl_zero(ActivePieces) << std::endl;
-    std::cout << "the index of first 1 starting form least significant bit\n";
-*/
+
     for (int i = std::countr_zero(ActivePieces); i <= BITBOARD_SIZE-std::countl_zero(ActivePieces); i++)
     {
-        if (isDLcapture(moves_array.whiteManLeft[i],empty))
+        if (isDLcapture(moves_array.whiteManLeft[i],*empty))
         {
             legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
-            MakeMove(i,&whiteActive,whitePiece,&ActivePieces,MoveType::DLCapture);
+            MakeMoveWhite(i,&whiteActive,whitePiece,&ActivePieces,empty,MoveType::DLCapture);
         }
 
-        if (isDRcapture(moves_array.whiteManLeft[i],empty))
+        if (isDRcapture(moves_array.whiteManLeft[i],*empty))
         {
             legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
-            MakeMove(i,&whiteActive,whitePiece,&ActivePieces,MoveType::DLCapture);
+            MakeMoveWhite(i,&whiteActive,whitePiece,&ActivePieces,empty,MoveType::DLCapture);
         }
-        if ((moves_array.whiteManLeft[i]&empty) !=0)
+        if ((moves_array.whiteManLeft[i]& *empty) !=0)
         {
             legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
-            MakeMove(i,&whiteActive,whitePiece,&ActivePieces,MoveType::DLCapture);
+            MakeMoveWhite(i,&whiteActive,whitePiece,&ActivePieces,empty,MoveType::DLCapture);
         }
-        if ((moves_array.whiteManRight[i]&empty) !=0)
+        if ((moves_array.whiteManRight[i]& *empty) !=0)
         {
             legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
-            MakeMove(i,&whiteActive,whitePiece,&ActivePieces,MoveType::DLCapture);
+            MakeMoveWhite(i,&whiteActive,whitePiece,&ActivePieces,empty,MoveType::DLCapture);
         }
 
     }
@@ -503,7 +583,7 @@ void findMoveBlack(Bitboard *blackPiece,Bitboard occupied,Bitboard empty){
 // Optimized recursive minimax using the contiguous tree.
 int recursiveMinimaxContiguous(int index, int depth, bool isMaximizing) {
   const Node &node = treeNodes[index];
-  if (node.isLeaf || depth == 0)
+  if (depth == 0)
     return node.value;
 
   int bestValue;
