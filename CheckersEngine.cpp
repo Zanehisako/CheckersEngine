@@ -1,9 +1,11 @@
-﻿#include <iostream>
+﻿#include <algorithm>
+#include <iostream>
 #include <cstdint>
 #include <array>
 #include <vector>
 #include <bit>
 #include <bitset>
+#include <limits>
 
 constexpr auto BITBOARD_SIZE = 31;
 
@@ -252,29 +254,103 @@ inline static bool isDLcapture(Bitboard board, Bitboard empty) {
 }
 
 
-template<typename T>
-inline void MakeMove(uint8_t from,Bitboard* board,Bitboard active,  T move_type)
-{
+using MaskFunction = void(*)(uint8_t from, Bitboard* mask,Bitboard* board,Bitboard* active);
+
+inline static void MaskURCapture(uint8_t from,Bitboard* mask,Bitboard* board,Bitboard* active) {
+		//this clear the bit
+		*mask &= ~(1UL << from);
+		//this sets the bit before the current bit
+		*mask |= ~(1UL << from + 3);
+		*mask |= ~(1UL << from + 4);
+        //this sets the new jump bit
+		*mask |= ~(1UL << from - 7);
+        *active = *board & *mask;
 }
 
-template <>
-inline static void MakeMove<MoveType>(uint8_t from,Bitboard* board,Bitboard active, MoveType move_type) {
+inline static void MaskULCapture(uint8_t from,Bitboard* mask,Bitboard* board,Bitboard* active) {
+		//this clear the bit
+		*board &= ~(1UL << from);
+		//this sets the bit before the current bit
+		*board |= ~(1UL << from + 3);
+		*board |= ~(1UL << from + 4);
+        //this sets the new jump bit
+		*board |= ~(1UL << from - 9);
 
-	switch (move_type)
-	{
-	case URCapture:
+}
 
+inline static void MaskDRCapture(uint8_t from,Bitboard* mask,Bitboard* board,Bitboard* active) {
+		//this clear the bit
+		*board &= ~(1UL << from);
+		//this sets the bit before the current bit
+		*board |= ~(1UL << from - 4);
+		*board |= ~(1UL << from - 5);
+        //this sets the new jump bit
+		*board |= ~(1UL << from + 9);
+}
+
+inline static void MaskDLCapture(uint8_t from,Bitboard* mask,Bitboard* board,Bitboard* active) {
+		//this clear the bit
+		*board &= ~(1UL << from);
+		//this sets the bit before the current bit
+		*board |= ~(1UL << from - 4);
+		*board |= ~(1UL << from - 5);
+        //this sets the new jump bit
+		*board |= ~(1UL << from + 7);
+}
+
+inline static void MaskULMove(uint8_t from,Bitboard* mask,Bitboard* board,Bitboard* active) {
+		//this clear the bit
+		*board &= ~(1UL << from);
+        //this sets the new jump bit
+		*board |= ~(1UL << from - 4);
+}
+inline static void MaskURMove(uint8_t from,Bitboard* mask,Bitboard* board,Bitboard* active) {
+		//this clear the bit
+		*board &= ~(1UL << from);
+        //this sets the new jump bit
+		*board |= ~(1UL << from - 3);
+}
+
+inline static void MaskDLMove(uint8_t from,Bitboard* mask,Bitboard* board,Bitboard* active) {
+		//this clear the bit
+		*board &= ~(1UL << from);
+        //this sets the new jump bit
+		*board |= ~(1UL << from + 3);
+}
+
+inline static void MaskDRMove(uint8_t from,Bitboard* mask,Bitboard* board,Bitboard* active) {
+		//this clear the bit
+		*board &= ~(1UL << from);
+        //this sets the new jump bit
+		*board |= ~(1UL << from + 4);
+}
+
+
+// Create lookup table
+static const MaskFunction mask_functions[] = {
+    &MaskURCapture,
+    &MaskULCapture,
+    &MaskDRCapture,
+    &MaskDLCapture,
+    &MaskURMove,
+    &MaskULMove,
+    &MaskDRMove,
+    &MaskDLMove,
+};
+
+using MoveFunction = void(*)(uint8_t from, Bitboard* board);
+
+
+inline static void MakeURCapture(uint8_t from,Bitboard* board) {
 		//this clear the bit
 		*board &= ~(1UL << from);
 		//this clear the bit between the jump
 		*board &= ~(1UL << from - 3);
 		//this sets the bit
 		*board |= (1UL << (from - 6));
-		printBitBoard(*board);
-        findMoveWhite(board,);
-		break;
+}
 
-	case ULCapture:
+inline static void MakeULCapture(uint8_t from,Bitboard* board) {
 		//this clear the bit
 		*board &= ~(1UL << from);
 		//this clear the bit between the jump
@@ -282,63 +358,71 @@ inline static void MakeMove<MoveType>(uint8_t from,Bitboard* board,Bitboard acti
 		//this sets the bit
 		*board |= (1UL << (from - 8));
 		printBitBoard(*board);
-		break;
 
-	case DRCapture:
+}
+
+inline static void MakeDRCapture(uint8_t from,Bitboard* board) {
 		//this clear the bit
 		*board &= ~(1UL << from);
 		//this clear the bit between the jump
 		*board &= ~(1UL << from + 5);
 		//this sets the bit
 		*board |= (1UL << (from + 9));
-		printBitBoard(*board);
-		break;
+}
 
-	case DLCapture:
+inline static void MakeDLCapture(uint8_t from,Bitboard* board) {
 		//this clear the bit
 		*board &= ~(1UL << from);
 		//this clear the bit between the jump
 		*board &= ~(1UL << from + 4);
 		//this sets the bit
 		*board |= (1UL << (from + 7));
-		printBitBoard(*board);
-		break;
+}
 
-	case URMove:
-		//this clear the bit
-		*board &= ~(1UL << from);
-		//this sets the bit
-		*board |= 1UL << (from-3);
-		printBitBoard(*board);
-		break;
-
-	case ULMove:
+inline static void MakeULMove(uint8_t from,Bitboard* board) {
 		//this clear the bit
 		*board &= ~(1UL << from);
 		//this sets the bit
 		*board |= 1UL << (from-4);
-		printBitBoard(*board);
-		break;
-	case DRMove:
+}
+inline static void MakeURMove(uint8_t from,Bitboard* board) {
 		//this clear the bit
 		*board &= ~(1UL << from);
 		//this sets the bit
-		*board |= 1UL << (from+4);
-		printBitBoard(*board);
-		break;
-	case DLMove:
+		*board |= 1UL << (from-3);
+}
+
+inline static void MakeDLMove(uint8_t from,Bitboard* board) {
 		//this clear the bit
 		*board &= ~(1UL << from);
 		//this sets the bit
 		*board |= 1UL << (from+3);
-		printBitBoard(*board);
-		break;
-	default:
-		break;
-	}
+}
+
+inline static void MakeDRMove(uint8_t from,Bitboard* board) {
+		//this clear the bit
+		*board &= ~(1UL << from);
+		//this sets the bit
+		*board |= 1UL << (from+4);
 }
 
 
+// Create lookup table
+static const MoveFunction move_functions[] = {
+    &MakeURCapture,
+    &MakeULCapture,
+    &MakeDRCapture,
+    &MakeDLCapture,
+    &MakeURMove,
+    &MakeULMove,
+    &MakeDRMove,
+    &MakeDLMove,
+};
+
+inline void MakeMove(uint8_t from,Bitboard* mask, Bitboard* board, Bitboard* active, MoveType move_type) {
+    move_functions[static_cast<int>(move_type)](from, board);
+    mask_functions[static_cast<int>(move_type)](from, mask,board, active);
+}
 
 
 void findMoveWhite(Bitboard *whitePiece,Bitboard occupied,Bitboard empty){
@@ -361,23 +445,23 @@ void findMoveWhite(Bitboard *whitePiece,Bitboard occupied,Bitboard empty){
         if (isDLcapture(moves_array.whiteManLeft[i],empty))
         {
             legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
-            MakeMove(i,whitePiece,MoveType::DLCapture);
+            MakeMove(i,&whiteActive,whitePiece,&ActivePieces,MoveType::DLCapture);
         }
 
         if (isDRcapture(moves_array.whiteManLeft[i],empty))
         {
             legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
-            MakeMove(i,whitePiece,MoveType::DRCapture);
+            MakeMove(i,&whiteActive,whitePiece,&ActivePieces,MoveType::DLCapture);
         }
         if ((moves_array.whiteManLeft[i]&empty) !=0)
         {
             legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
-            MakeMove(i,whitePiece,MoveType::DLMove);
+            MakeMove(i,&whiteActive,whitePiece,&ActivePieces,MoveType::DLCapture);
         }
         if ((moves_array.whiteManRight[i]&empty) !=0)
         {
             legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
-            MakeMove(i,whitePiece,MoveType::DRMove);
+            MakeMove(i,&whiteActive,whitePiece,&ActivePieces,MoveType::DLCapture);
         }
 
     }
@@ -394,23 +478,23 @@ void findMoveBlack(Bitboard *blackPiece,Bitboard occupied,Bitboard empty){
         if (isDLcapture(moves_array.blackManLeft[i],empty))
         {
             legalMoves.push_back(Move(i,std::countr_zero(moves_array.blackManLeft[i])));
-            MakeMove(i,blackPiece,MoveType::DLCapture);
+            MakeMove(i,&blackActive,blackPiece,&ActivePieces,MoveType::DLCapture);
         }
 
         if (isDRcapture(moves_array.blackManLeft[i],empty))
         {
             legalMoves.push_back(Move(i,std::countr_zero(moves_array.blackManLeft[i])));
-            MakeMove(i,blackPiece,MoveType::DRCapture);
+            MakeMove(i,&blackActive,blackPiece,&ActivePieces,MoveType::DLCapture);
         }
         if ((moves_array.blackManLeft[i]&empty) !=0)
         {
             legalMoves.push_back(Move(i,std::countr_zero(moves_array.blackManLeft[i])));
-            MakeMove(i,blackPiece,MoveType::DLMove);
+            MakeMove(i,&blackActive,blackPiece,&ActivePieces,MoveType::DLCapture);
         }
         if ((moves_array.blackManRight[i]&empty) !=0)
         {
             legalMoves.push_back(Move(i,std::countr_zero(moves_array.blackManLeft[i])));
-            MakeMove(i,blackPiece,MoveType::DRMove);
+            MakeMove(i,&blackActive,blackPiece,&ActivePieces,MoveType::DLCapture);
         }
 
     }
@@ -424,14 +508,14 @@ int recursiveMinimaxContiguous(int index, int depth, bool isMaximizing) {
 
   int bestValue;
   if (isMaximizing) {
-    bestValue = numeric_limits<int>::min();
+    bestValue =  std::numeric_limits<int>::min();
     for (int childIndex : node.children)
-      bestValue = max(bestValue,
+      bestValue = std::max(bestValue,
                       recursiveMinimaxContiguous(childIndex, depth - 1, false));
   } else {
-    bestValue = numeric_limits<int>::max();
+    bestValue = std::numeric_limits<int>::max();
     for (int childIndex : node.children)
-      bestValue = min(bestValue,
+      bestValue = std::min(bestValue,
                       recursiveMinimaxContiguous(childIndex, depth - 1, true));
   }
   return bestValue;
