@@ -1,660 +1,590 @@
-﻿#include <algorithm>
-#include <iostream>
-#include <cstdint>
+﻿
+#include <algorithm>
 #include <array>
-#include <vector>
 #include <bit>
-#include <bitset>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <iostream>
 #include <limits>
+#include <stdexcept>
+#include <vector>
 
-constexpr auto BITBOARD_SIZE = 31;
+#ifdef _MSC_VER
+#  include <intrin.h>
+#  define __builtin_popcount __popcnt
+#endif
 
-// We now use a 32‐bit bitboard to represent the 32 playable squares.
-
+// We represent the 32 playable squares with a 32–bit bitboard.
 using Bitboard = uint32_t;
-enum MoveType
-{
-    URCapture,
-    ULCapture,
-    DRCapture,
-    DLCapture,
-    URMove,
-    ULMove,
-    DRMove,
-    DLMove,
-};
 
+enum MoveType {
+  URCapture,
+  ULCapture,
+  DRCapture,
+  DLCapture,
+  URMove,
+  ULMove,
+  DRMove,
+  DLMove,
+};
 
 struct Move {
-    uint8_t from;
-    uint8_t to;
-
-    Move(uint8_t f,uint8_t t):from(f),to(t){}
+  uint8_t from;
+  uint8_t to;
+  MoveType type;
+  Move(uint8_t f, uint8_t t, MoveType mt = URMove) : from(f), to(t), type(mt) {}
 };
 
-
-std::ostream & operator << (std::ostream & outs, const Move & move) {
-    return outs <<"from:"<< move.from << " to:" << move.to;
+std::ostream &operator<<(std::ostream &os, const Move &m) {
+  os << "from:" << static_cast<int>(m.from) << " to:" << static_cast<int>(m.to);
+  return os;
 }
 
 struct GameState {
-	Bitboard white;
-	Bitboard whiteMask;
-	Bitboard black;
-	Bitboard blackMask;
-	Bitboard kings;
-	Bitboard kingsMask;
-    Bitboard empty;
+  Bitboard white;
+  Bitboard black;
+  Bitboard kings;
+  Bitboard empty;
+  bool whiteToMove;
 
-	GameState(
-		Bitboard w,
-		Bitboard wMask,
-		Bitboard b,
-		Bitboard bMask,
-		Bitboard k,
-		Bitboard kMask,
-		Bitboard e 
-	) :white(w), whiteMask(wMask), black(b), blackMask(bMask), kings(k), kingsMask(kMask),empty(e) {
-	}
+  GameState() : white(0), black(0), kings(0), empty(0), whiteToMove(true) {}
+  GameState(Bitboard w, Bitboard b, Bitboard k, Bitboard e, bool wtm)
+      : white(w), black(b), kings(k), empty(e), whiteToMove(wtm) {}
+
+  GameState copy() const {
+    return GameState(white, black, kings, empty, whiteToMove);
+  }
+  Bitboard occupied() const { return white | black; }
+  void updateEmpty() { empty = ~(white | black) & 0xFFFFFFFF; }
 };
 
+// ────────────────────────────────────────────────────────────
+//  Mapping between index [0,31] and board (row,col) coordinates.
+//  The 32 playable squares are the dark squares of an 8×8 board.
+//  For even rows (0,2,4,6): playable squares are at columns 1,3,5,7.
+//  For odd rows (1,3,5,7): playable squares are at columns 0,2,4,6.
+//  (Row 0 is printed at the top.)
+// ────────────────────────────────────────────────────────────
 
-std::ostream & operator << (std::ostream & outs, const Move & move) {
-    return outs <<"from:"<< move.from << " to:" << move.to;
+constexpr int indexFromRC(int row, int col) {
+  if (row < 0 || row >= 8 || col < 0 || col >= 8)
+    return -1;
+  if (row % 2 == 0) { // even row: playable squares at odd columns
+    if (col % 2 == 0)
+      return -1;
+    return row * 4 + ((col - 1) / 2);
+  } else { // odd row: playable squares at even columns
+    if (col % 2 != 0)
+      return -1;
+    return row * 4 + (col / 2);
+  }
 }
-// Initialize the move arrays. Our mapping is based on the idea that
-// the 32 playable squares come from an 8x8 board where:
-//   - Rows are numbered 0 (bottom) to 7 (top)
-//   - Each row has 4 playable squares.
-//   - On even rows (0, 2, 4, 6), playable squares are in columns 0,2,4,6.
-//   - On odd rows (1, 3, 5, 7), playable squares are in columns 1,3,5,7.
+
+constexpr void rcFromIndex(int i, int &row, int &col) {
+  row = i / 4;
+  int j = i % 4;
+  if (row % 2 == 0)
+    col = 2 * j + 1;
+  else
+    col = 2 * j;
+}
+
+// ────────────────────────────────────────────────────────────
+//  Precomputed move arrays computed via coordinate arithmetic.
+// ────────────────────────────────────────────────────────────
+
 struct MoveArrays {
-    std::array<Bitboard, 32> whiteManLeft;
-    std::array<Bitboard, 32> whiteManRight;
-    std::array<Bitboard, 32> whiteManCapturesLeft;
-    std::array<Bitboard, 32> whiteManCapturesRight;
-    std::array<Bitboard, 32> blackManLeft;
-    std::array<Bitboard, 32> blackManRight;
-    std::array<Bitboard, 32> blackManCapturesLeft;
-    std::array<Bitboard, 32> blackManCapturesRight;
-    std::array<Bitboard, 32> King;
+  std::array<Bitboard, 32> whiteManLeft{};
+  std::array<Bitboard, 32> whiteManRight{};
+  std::array<Bitboard, 32> whiteManCapturesLeft{};
+  std::array<Bitboard, 32> whiteManCapturesRight{};
+  std::array<Bitboard, 32> blackManLeft{};
+  std::array<Bitboard, 32> blackManRight{};
+  std::array<Bitboard, 32> blackManCapturesLeft{};
+  std::array<Bitboard, 32> blackManCapturesRight{};
+  std::array<Bitboard, 32> kingMoves{};
+  std::array<Bitboard, 32> kingCapturesUL{};
+  std::array<Bitboard, 32> kingCapturesUR{};
+  std::array<Bitboard, 32> kingCapturesDL{};
+  std::array<Bitboard, 32> kingCapturesDR{};
 };
-
-
-//--------------------------------------------------------------------
-// Utility: initialize the moves array for the white/black man and kings.
-//--------------------------------------------------------------------
 
 consteval MoveArrays initMoveArrays() {
-    MoveArrays moves{};  // Value-initialize all arrays
-    constexpr bool LEFT_EDGE[32] = {
-        true,false,false,false,
-        true,false,false,false,
-        true,false,false,false,
-        true,false,false,false,
-        true,false,false,false,
-        true,false,false,false,
-        true,false,false,false,
-        true,false,false,false,
-    }; constexpr bool RIGHT_EDGE[32] = {
-        false,false,false,true,
-        false,false,false,true,
-        false,false,false,true,
-        false,false,false,true,
-        false,false,false,true,
-        false,false,false,true,
-        false,false,false,true,
-        false,false,false,true,
-    };
-
-    constexpr bool EDGES[32] = {
-        true,false,false,true,
-        true,false,false,false,
-        false,false,false,true,
-        true,false,false,false,
-        false,false,false,true,
-        true,false,false,false,
-        false,false,false,true,
-        true,false,false,false,
-    };
-    for (int i = 0; i < 32; i++)
-    {
-        //setting up the white  man pieces by shifting them down left/right =>  and +3/4   
-        if (i<28)
-        {
-            if (EDGES[i])
-            {
-            moves.whiteManLeft[i] |= 1u << (i + 4);
-            moves.whiteManCapturesLeft[i] |= 1u << (i + 4);
-            }
-            else {
-            moves.whiteManRight[i] |= 1u << (i + 5);
-            moves.whiteManLeft[i] |= 1u << (i + 4);
-            }
-            if (i+9<32)
-            {
-				if (!RIGHT_EDGE[i])
-                {
-                    moves.whiteManCapturesRight[i] |= 1u << (i + 9);
-
-                }
-				if (!LEFT_EDGE[i])
-                {
-                    moves.whiteManCapturesLeft[i] |= 1u << (i + 7);
-                }
-            }
-
-        }
-        else {
-            moves.whiteManRight[i] = 0;
-            moves.whiteManLeft[i] = 0;
-            moves.whiteManCapturesRight[i] = 0;
-            moves.whiteManCapturesLeft[i] = 0;
-        }
-        //setting up the black man pieces by shifting them down left/right => -3/4 
-        if (i>3)
-        {
-            if (i== 4 ||i== 12 ||i== 20 ||i== 28 ||i== 11 ||i== 19 ||i== 27)
-            {
-            moves.blackManRight[i] |= 1u << (i - 4);
-            }
-            else {
-            moves.blackManLeft[i] |= 1u << (i - 5);
-            moves.blackManRight[i] |= 1u << (i - 4);
-            if (!LEFT_EDGE[i])
-            {
-				if (i - 8 >= 0)
-				{
-					moves.blackManCapturesLeft[i] |= 1u << (i - 8);
-				}
-            }
-            if (!RIGHT_EDGE[i])
-            {
-				if (i - 6 >= 0)
-				{
-					moves.blackManCapturesRight[i] |= 1u << (i - 6);
-				}
-            }
-            }
-
-        }
-        else {
-            moves.blackManLeft[i] = 0;
-            moves.blackManRight[i] = 0;
-            moves.blackManCapturesLeft[i] = 0;
-            moves.blackManCapturesRight[i] = 0;
-        }
-        }
-    return moves;
+  MoveArrays moves{};
+  for (int i = 0; i < 32; i++) {
+    int r, c;
+    rcFromIndex(i, r, c);
+    // White normal moves (moving “up” decreases the row).
+    if (r - 1 >= 0) {
+      int dest = indexFromRC(r - 1, c - 1);
+      if (dest != -1)
+        moves.whiteManLeft[i] = 1u << dest;
+      dest = indexFromRC(r - 1, c + 1);
+      if (dest != -1)
+        moves.whiteManRight[i] = 1u << dest;
+    }
+    // White captures: two steps up.
+    if (r - 2 >= 0) {
+      int dest = indexFromRC(r - 2, c - 2);
+      if (dest != -1)
+        moves.whiteManCapturesLeft[i] = 1u << dest;
+      dest = indexFromRC(r - 2, c + 2);
+      if (dest != -1)
+        moves.whiteManCapturesRight[i] = 1u << dest;
+    }
+    // Black normal moves (moving “down” increases the row).
+    if (r + 1 < 8) {
+      int dest = indexFromRC(r + 1, c - 1);
+      if (dest != -1)
+        moves.blackManLeft[i] = 1u << dest;
+      dest = indexFromRC(r + 1, c + 1);
+      if (dest != -1)
+        moves.blackManRight[i] = 1u << dest;
+    }
+    // Black captures: two steps down.
+    if (r + 2 < 8) {
+      int dest = indexFromRC(r + 2, c - 2);
+      if (dest != -1)
+        moves.blackManCapturesLeft[i] = 1u << dest;
+      dest = indexFromRC(r + 2, c + 2);
+      if (dest != -1)
+        moves.blackManCapturesRight[i] = 1u << dest;
+    }
+    moves.kingMoves[i] = moves.whiteManLeft[i] | moves.whiteManRight[i] |
+                         moves.blackManLeft[i] | moves.blackManRight[i];
+    moves.kingCapturesUL[i] = moves.whiteManCapturesLeft[i];
+    moves.kingCapturesUR[i] = moves.whiteManCapturesRight[i];
+    moves.kingCapturesDL[i] = moves.blackManCapturesLeft[i];
+    moves.kingCapturesDR[i] = moves.blackManCapturesRight[i];
+  }
+  return moves;
 }
 
 constexpr auto moves_array = initMoveArrays();
 
-//this are the masks for the active pieces ie the pieces that can make a legal move 
-//this is the last row for white and last for black
-Bitboard whiteActive = 0x00000F00u;
-Bitboard blackActive = 0x00F00000u;
+// ────────────────────────────────────────────────────────────
+//  For king promotion we use these masks (indices 0–3 are row 0, 28–31 are row
+//  7). In our initial setup white promotes on row 0 and black on row 7.
+// ────────────────────────────────────────────────────────────
 
-//--------------------------------------------------------------------
-// Utility: Print the 32-bit board as an 8x8 grid.
-// Only the 32 playable squares are represented by a symbol ('1' if the
-// corresponding bit is set, '.' if not). Non-playable squares are left blank.
-//--------------------------------------------------------------------
+constexpr Bitboard WHITE_KING_ROW = 0xF0000000; // indices 28–31
+constexpr Bitboard BLACK_KING_ROW = 0x0000000F; // indices 0–3
 
-// Prints an 8x8 board. Dark squares show the corresponding bit (as '1' if set, '.' if not).
-// Light squares are printed as '.'.
-void printBitBoard(uint32_t board) {
-    int bitIndex = 0;  // Index into the 32-bit board bits.
-    
-    // Loop over 8 rows.
-    for (int row = 0; row < 8; row++) {
-        // Loop over 8 columns.
-        for (int col = 0; col < 8; col++) {
-            // Determine if this square is dark.
-            // On even rows (0,2,4,6): dark squares are at odd columns.
-            // On odd rows (1,3,5,7): dark squares are at even columns.
-            bool isDark = (row % 2 == 0) ? (col % 2 == 1) : (col % 2 == 0);
-            
-            if (isDark) {
-                // For a dark square, check the corresponding bit.
-                char cell = (board & (1u << bitIndex)) ? '1' : '.';
-                std::cout << cell;
-                bitIndex++;  // Advance to the next bit in our 32-bit board.
-            } else {
-                // For light squares, print a dot (or you can choose a space).
-                std::cout << '.';
-            }
-            
-            // Print a space between columns (optional).
-            if (col < 7) std::cout << " ";
-        }
-        std::cout << std::endl;
+// ────────────────────────────────────────────────────────────
+//  Print the game state as an 8×8 grid. (Only playable squares show pieces.)
+// ────────────────────────────────────────────────────────────
+
+void printGameState(const GameState &state) {
+  std::cout << "  0 1 2 3 4 5 6 7\n";
+  int bitIndex = 0;
+  for (int row = 0; row < 8; row++) {
+    std::cout << row << " ";
+    for (int col = 0; col < 8; col++) {
+      bool isPlayable = (row % 2 == 0) ? (col % 2 == 1) : (col % 2 == 0);
+      if (isPlayable) {
+        char cell = '.';
+        if (state.white & (1u << bitIndex))
+          cell = (state.kings & (1u << bitIndex)) ? 'W' : 'w';
+        else if (state.black & (1u << bitIndex))
+          cell = (state.kings & (1u << bitIndex)) ? 'B' : 'b';
+        std::cout << cell;
+        bitIndex++;
+      } else {
+        std::cout << " ";
+      }
+      if (col < 7)
+        std::cout << " ";
     }
-}
-
-inline static bool isURcapture(Bitboard board, Bitboard empty) {
-    //(empty& (1u >> 4)) ==0  
-    if ((empty& (1u >> 4)) ==0)
-    {
-        if ((board & empty) !=0)
-        {
-            return MoveType::URCapture;
-        }
-    }
-    return MoveType::URMove;
-}
-
-inline static bool isULcapture(Bitboard board, Bitboard empty) {
-    //(empty& (1u >> 4)) ==0  
-    if ((empty& (1u >> 4)) ==0)
-    {
-        if ((board & empty) !=0)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-inline static bool isDRcapture(Bitboard board, Bitboard empty) {
-    //(empty& (1u >> 4)) ==0  
-    if ((empty& (1u >> 4)) ==0)
-    {
-        if ((board & empty) !=0)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-inline static bool isDLcapture(Bitboard board, Bitboard empty) {
-    //(empty& (1u >> 4)) ==0  
-    if ((empty& (1u >> 4)) ==0)
-    {
-        if ((board & empty) !=0)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-
-using MaskFunction = void(*)(uint8_t from, Bitboard* mask,Bitboard* board,Bitboard* active);
-
-inline static void MaskURCapture(uint8_t from,Bitboard* mask,Bitboard* board,Bitboard* active) {
-		//this clear the bit
-		*mask &= ~(1UL << from);
-		//this sets the bit before the current bit
-		*mask |= ~(1UL << from + 3);
-		*mask |= ~(1UL << from + 4);
-        //this sets the new jump bit
-		*mask |= ~(1UL << from - 7);
-        *active = *board & *mask;
-}
-
-inline static void MaskULCapture(uint8_t from,Bitboard* mask,Bitboard* board,Bitboard* active) {
-		//this clear the bit
-		*board &= ~(1UL << from);
-		//this sets the bit before the current bit
-		*board |= ~(1UL << from + 3);
-		*board |= ~(1UL << from + 4);
-        //this sets the new jump bit
-		*board |= ~(1UL << from - 9);
-
-}
-
-inline static void MaskDRCapture(uint8_t from,Bitboard* mask,Bitboard* board,Bitboard* active) {
-		//this clear the bit
-		*board &= ~(1UL << from);
-		//this sets the bit before the current bit
-		*board |= ~(1UL << from - 4);
-		*board |= ~(1UL << from - 5);
-        //this sets the new jump bit
-		*board |= ~(1UL << from + 9);
-}
-
-inline static void MaskDLCapture(uint8_t from,Bitboard* mask,Bitboard* board,Bitboard* active) {
-		//this clear the bit
-		*board &= ~(1UL << from);
-		//this sets the bit before the current bit
-		*board |= ~(1UL << from - 4);
-		*board |= ~(1UL << from - 5);
-        //this sets the new jump bit
-		*board |= ~(1UL << from + 7);
-}
-
-inline static void MaskULMove(uint8_t from,Bitboard* mask,Bitboard* board,Bitboard* active) {
-		//this clear the bit
-		*board &= ~(1UL << from);
-        //this sets the new jump bit
-		*board |= ~(1UL << from - 4);
-}
-inline static void MaskURMove(uint8_t from,Bitboard* mask,Bitboard* board,Bitboard* active) {
-		//this clear the bit
-		*board &= ~(1UL << from);
-        //this sets the new jump bit
-		*board |= ~(1UL << from - 3);
-}
-
-inline static void MaskDLMove(uint8_t from,Bitboard* mask,Bitboard* board,Bitboard* active) {
-		//this clear the bit
-		*board &= ~(1UL << from);
-        //this sets the new jump bit
-		*board |= ~(1UL << from + 3);
-}
-
-inline static void MaskDRMove(uint8_t from,Bitboard* mask,Bitboard* board,Bitboard* active) {
-		//this clear the bit
-		*board &= ~(1UL << from);
-        //this sets the new jump bit
-		*board |= ~(1UL << from + 4);
-}
-
-
-// Create lookup table
-static const MaskFunction mask_functions[] = {
-    &MaskURCapture,
-    &MaskULCapture,
-    &MaskDRCapture,
-    &MaskDLCapture,
-    &MaskURMove,
-    &MaskULMove,
-    &MaskDRMove,
-    &MaskDLMove,
-};
-
-using MoveFunction = void(*)(uint8_t from, Bitboard* white,Bitboard* black);
-
-
-inline static void MakeURCaptureWhite(uint8_t from, Bitboard* white,Bitboard* black) {
-		//this clear the bit
-		*white &= ~(1UL << from);
-        //clears the captured pieces's bit
-		*black &= (1UL << (from - 6));
-		//this clear the bit between the jump
-		*white &= ~(1UL << from - 3);
-		//this sets the bit
-		*white |= (1UL << (from - 6));
-}
-
-inline static void MakeULCaptureWhite(uint8_t from, Bitboard* white,Bitboard* black) {
-		//this clear the bit
-		*white &= ~(1UL << from);
-        //clears the captured pieces's bit
-		*black &= (1UL << (from - 8));
-		//this clear the bit between the jump
-		*white &= ~(1UL << from - 4);
-		//this sets the bit
-		*white |= (1UL << (from - 8));
-
-}
-
-inline static void MakeDRCaptureWhite(uint8_t from, Bitboard* white,Bitboard* black) {
-		//this clear the bit
-		*white &= ~(1UL << from);
-        //clears the captured pieces's bit
-		*black &= (1UL << (from + 9));
-		//this clear the bit between the jump
-		*white &= ~(1UL << from + 5);
-		//this sets the bit
-		*white |= (1UL << (from + 9));
-}
-
-inline static void MakeDLCaptureWhite(uint8_t from, Bitboard* white,Bitboard* black) {
-		//this clear the bit
-		*white &= ~(1UL << from);
-        //clears the captured pieces's bit
-		*black &= (1UL << (from + 7));
-		//this clear the bit between the jump
-		*white &= ~(1UL << from + 4);
-		//this sets the bit
-		*white |= (1UL << (from + 7));
-}
-
-inline static void MakeURCaptureBlack(uint8_t from,Bitboard* black,Bitboard* white) {
-		//this clear the bit
-		*black &= ~(1UL << from);
-        //clears the captured pieces's bit
-		*white &= (1UL << (from - 6));
-		//this clear the bit between the jump
-		*black &= ~(1UL << from - 3);
-		//this sets the bit
-		*black |= (1UL << (from - 6));
-}
-
-inline static void MakeULCaptureBlack(uint8_t from,Bitboard* black,Bitboard* white) {
-		//this clear the bit
-		*black &= ~(1UL << from);
-        //clears the captured pieces's bit
-		*white &= (1UL << (from - 8));
-		//this clear the bit between the jump
-		*black &= ~(1UL << from - 4);
-		//this sets the bit
-		*black |= (1UL << (from - 8));
-
-}
-
-inline static void MakeDRCaptureBlack(uint8_t from,Bitboard* black,Bitboard* white) {
-		//this clear the bit
-		*black &= ~(1UL << from);
-        //clears the captured pieces's bit
-		*white &= (1UL << (from + 9));
-		//this clear the bit between the jump
-		*black &= ~(1UL << from + 5);
-		//this sets the bit
-		*black |= (1UL << (from + 9));
-}
-
-inline static void MakeDLCaptureBlack(uint8_t from,Bitboard* black,Bitboard* white) {
-		//this clear the bit
-		*black &= ~(1UL << from);
-        //clears the captured pieces's bit
-		*white &= (1UL << (from + 7));
-		//this clear the bit between the jump
-		*black &= ~(1UL << from + 4);
-		//this sets the bit
-		*black |= (1UL << (from + 7));
-}
-
-inline static void MakeULMove(uint8_t from,Bitboard* board,Bitboard* o= nullptr) {
-		//this clear the bit
-		*board &= ~(1UL << from);
-		//this sets the bit
-		*board |= 1UL << (from-4);
-}
-inline static void MakeURMove(uint8_t from,Bitboard* board,Bitboard* o= nullptr) {
-		//this clear the bit
-		*board &= ~(1UL << from);
-		//this sets the bit
-		*board |= 1UL << (from-3);
-}
-
-inline static void MakeDLMove(uint8_t from,Bitboard* board,Bitboard* o= nullptr) {
-		//this clear the bit
-		*board &= ~(1UL << from);
-		//this sets the bit
-		*board |= 1UL << (from+3);
-}
-
-inline static void MakeDRMove(uint8_t from,Bitboard* board,Bitboard* o= nullptr) {
-		//this clear the bit
-		*board &= ~(1UL << from);
-		//this sets the bit
-		*board |= 1UL << (from+4);
-}
-
-
-// Create lookup table
-static const MoveFunction move_functions_white[] = {
-    &MakeURCaptureWhite,
-    &MakeULCaptureWhite,
-    &MakeDRCaptureWhite,
-    &MakeDLCaptureWhite,
-    &MakeURMove,
-    &MakeULMove,
-    &MakeDRMove,
-    &MakeDLMove,
-};
-static const MoveFunction move_functions_black[] = {
-    &MakeURCaptureBlack,
-    &MakeULCaptureBlack,
-    &MakeDRCaptureBlack,
-    &MakeDLCaptureBlack,
-    &MakeURMove,
-    &MakeULMove,
-    &MakeDRMove,
-    &MakeDLMove,
-};
-
-inline void MakeMoveWhite(uint8_t from,GameState game_state, MoveType move_type) {
-    move_functions_white[static_cast<int>(move_type)](from, &game_state.white,&game_state.black);
-    mask_functions[static_cast<int>(move_type)](from, mask,whiteBoard, whiteActive);
-    findMoveWhite(whiteBoard, empty);
-}
-
-
-void findMoveWhite(Bitboard *whitePiece,Bitboard* empty){
-
-    std::vector<Move> legalMoves;
-    Bitboard ActivePieces = *whitePiece & whiteActive;
-
-    for (int i = std::countr_zero(ActivePieces); i <= BITBOARD_SIZE-std::countl_zero(ActivePieces); i++)
-    {
-        if (isDLcapture(moves_array.whiteManLeft[i],*empty))
-        {
-            legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
-            MakeMoveWhite(i,&whiteActive,whitePiece,&ActivePieces,empty,MoveType::DLCapture);
-        }
-
-        if (isDRcapture(moves_array.whiteManLeft[i],*empty))
-        {
-            legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
-            MakeMoveWhite(i,&whiteActive,whitePiece,&ActivePieces,empty,MoveType::DLCapture);
-        }
-        if ((moves_array.whiteManLeft[i]& *empty) !=0)
-        {
-            legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
-            MakeMoveWhite(i,&whiteActive,whitePiece,&ActivePieces,empty,MoveType::DLCapture);
-        }
-        if ((moves_array.whiteManRight[i]& *empty) !=0)
-        {
-            legalMoves.push_back(Move(i,std::countr_zero(moves_array.whiteManLeft[i])));
-            MakeMoveWhite(i,&whiteActive,whitePiece,&ActivePieces,empty,MoveType::DLCapture);
-        }
-
-    }
-}
-
-
-
-void findMoveBlack(Bitboard *blackPiece,Bitboard occupied,Bitboard empty){
-
-    std::vector<Move> legalMoves;
-    Bitboard ActivePieces = *blackPiece & blackActive;
-    for (int i = std::countr_zero(ActivePieces); i <= BITBOARD_SIZE-std::countl_zero(ActivePieces); i++)
-    {
-        if (isDLcapture(moves_array.blackManLeft[i],empty))
-        {
-            legalMoves.push_back(Move(i,std::countr_zero(moves_array.blackManLeft[i])));
-            MakeMove(i,&blackActive,blackPiece,&ActivePieces,MoveType::DLCapture);
-        }
-
-        if (isDRcapture(moves_array.blackManLeft[i],empty))
-        {
-            legalMoves.push_back(Move(i,std::countr_zero(moves_array.blackManLeft[i])));
-            MakeMove(i,&blackActive,blackPiece,&ActivePieces,MoveType::DLCapture);
-        }
-        if ((moves_array.blackManLeft[i]&empty) !=0)
-        {
-            legalMoves.push_back(Move(i,std::countr_zero(moves_array.blackManLeft[i])));
-            MakeMove(i,&blackActive,blackPiece,&ActivePieces,MoveType::DLCapture);
-        }
-        if ((moves_array.blackManRight[i]&empty) !=0)
-        {
-            legalMoves.push_back(Move(i,std::countr_zero(moves_array.blackManLeft[i])));
-            MakeMove(i,&blackActive,blackPiece,&ActivePieces,MoveType::DLCapture);
-        }
-
-    }
-    
-}
-// Optimized recursive minimax using the contiguous tree.
-int recursiveMinimaxContiguous(int index, int depth, bool isMaximizing) {
-  const Node &node = treeNodes[index];
-  if (depth == 0)
-    return node.value;
-
-  int bestValue;
-  if (isMaximizing) {
-    bestValue =  std::numeric_limits<int>::min();
-    for (int childIndex : node.children)
-      bestValue = std::max(bestValue,
-                      recursiveMinimaxContiguous(childIndex, depth - 1, false));
-  } else {
-    bestValue = std::numeric_limits<int>::max();
-    for (int childIndex : node.children)
-      bestValue = std::min(bestValue,
-                      recursiveMinimaxContiguous(childIndex, depth - 1, true));
+    std::cout << "\n";
   }
-  return bestValue;
+  std::cout << (state.whiteToMove ? "White" : "Black") << " to move\n";
 }
 
+// ────────────────────────────────────────────────────────────
+//  A simple hash function for GameState.
+//  Combines white, black, kings and whose turn it is.
+// ────────────────────────────────────────────────────────────
 
+std::size_t hashState(const GameState &state) {
+  std::size_t hash = std::hash<Bitboard>()(state.white);
+  hash = hash * 31 + std::hash<Bitboard>()(state.black);
+  hash = hash * 31 + std::hash<Bitboard>()(state.kings);
+  hash = hash * 31 + std::hash<bool>()(state.whiteToMove);
+  return hash;
+}
 
+// ────────────────────────────────────────────────────────────
+//  Revised capture detection: check each direction separately.
+// ────────────────────────────────────────────────────────────
 
-//--------------------------------------------------------------------
-// Main: Set up the initial position and generate moves.
-//--------------------------------------------------------------------
-int main() {
-    clock_t before = clock();
-    // Initial positions:
-    // We place red pieces on the bottom three rows (rows 0, 1, 2 → indices 0..11)
-    // and black pieces on the top three rows (rows 5,6,7 → indices 20..31).
+bool isCapturePossible(const GameState &state) {
+  Bitboard pieces = state.whiteToMove ? state.white : state.black;
+  Bitboard kings = pieces & state.kings;
+  Bitboard men = pieces & ~state.kings;
+  Bitboard opponents = state.whiteToMove ? state.black : state.white;
 
-    Bitboard whitePieces = 0;
-    for (int i = 0; i < 12; i++)
-        whitePieces |= (1 << i);
-    
-    Bitboard blackPieces = 0;
-    for (int i = 20; i < 32; i++)
-        blackPieces |= (1 << i);
-    
-    Bitboard occupied = whitePieces | blackPieces;
-    Bitboard empty= ~occupied&0xFFFFFFFF;
-    
-
-    
-    std::cout << "Initial White Pieces (32-bit):\n";
-    printBitBoard(whitePieces);
-    
-    std::cout << "Initial Black Pieces (32-bit):\n";
-    printBitBoard(blackPieces);
-
-    std::cout << "Initial White Pieces captures (32-bit):\n";
-    for (auto c : moves_array.whiteManCapturesLeft) {
-        std::cout << std::bitset<32>(c) << std::endl;
+  for (int i = 0; i < 32; i++) {
+    if (men & (1u << i)) {
+      if (state.whiteToMove) {
+        if ((moves_array.whiteManLeft[i] & opponents) &&
+            (moves_array.whiteManCapturesLeft[i] & state.empty))
+          return true;
+        if ((moves_array.whiteManRight[i] & opponents) &&
+            (moves_array.whiteManCapturesRight[i] & state.empty))
+          return true;
+      } else {
+        if ((moves_array.blackManLeft[i] & opponents) &&
+            (moves_array.blackManCapturesLeft[i] & state.empty))
+          return true;
+        if ((moves_array.blackManRight[i] & opponents) &&
+            (moves_array.blackManCapturesRight[i] & state.empty))
+          return true;
+      }
     }
-    
-    std::cout << "Empty Playable Squares:\n";
-    // The empty squares are the 32 bits not set in 'occupied'
-    printBitBoard(empty);
-    /*
-    for (size_t i = 0; i < 100000000; i++)
-    {
-    findMoveWhite(&whitePieces, occupied, empty);
-    findMoveBlack(&blackPieces, occupied, empty);
-    }*/
-    findMoveWhite(&whitePieces, occupied, empty);
-    std::cout << "White Board (32-bit):\n";
-    printBitBoard(whitePieces );
-    std::cout << "Black Board (32-bit):\n";
-    printBitBoard(blackPieces);
-    std::cout << "Board (32-bit):\n";
-    printBitBoard(whitePieces |blackPieces);
-    std::cout << "it took" << (float)(clock() - before) / CLOCKS_PER_SEC <<"s"<< std::endl;
-
-    return 0;
+  }
+  for (int i = 0; i < 32; i++) {
+    if (kings & (1u << i)) {
+      if ((moves_array.whiteManLeft[i] & opponents) &&
+          (moves_array.kingCapturesUL[i] & state.empty))
+        return true;
+      if ((moves_array.whiteManRight[i] & opponents) &&
+          (moves_array.kingCapturesUR[i] & state.empty))
+        return true;
+      if ((moves_array.blackManLeft[i] & opponents) &&
+          (moves_array.kingCapturesDL[i] & state.empty))
+        return true;
+      if ((moves_array.blackManRight[i] & opponents) &&
+          (moves_array.kingCapturesDR[i] & state.empty))
+        return true;
+    }
+  }
+  return false;
 }
 
+// ────────────────────────────────────────────────────────────
+//  Move generation: if a capture is available, only generate capture moves.
+// ────────────────────────────────────────────────────────────
+
+std::vector<Move> generateMoves(const GameState &state) {
+  std::vector<Move> moves;
+  Bitboard pieces = state.whiteToMove ? state.white : state.black;
+  Bitboard kings = pieces & state.kings;
+  Bitboard men = pieces & ~state.kings;
+  Bitboard opponents = state.whiteToMove ? state.black : state.white;
+  bool mustCapture = isCapturePossible(state);
+
+  if (mustCapture) {
+    for (int i = 0; i < 32; i++) {
+      if (!(men & (1u << i)))
+        continue;
+      if (state.whiteToMove) {
+        if ((moves_array.whiteManLeft[i] & opponents) &&
+            (moves_array.whiteManCapturesLeft[i] & state.empty)) {
+          uint8_t dest = std::countr_zero(moves_array.whiteManCapturesLeft[i] &
+                                          state.empty);
+          moves.emplace_back(i, dest, ULCapture);
+        }
+        if ((moves_array.whiteManRight[i] & opponents) &&
+            (moves_array.whiteManCapturesRight[i] & state.empty)) {
+          uint8_t dest = std::countr_zero(moves_array.whiteManCapturesRight[i] &
+                                          state.empty);
+          moves.emplace_back(i, dest, URCapture);
+        }
+      } else {
+        if ((moves_array.blackManLeft[i] & opponents) &&
+            (moves_array.blackManCapturesLeft[i] & state.empty)) {
+          uint8_t dest = std::countr_zero(moves_array.blackManCapturesLeft[i] &
+                                          state.empty);
+          moves.emplace_back(i, dest, DLCapture);
+        }
+        if ((moves_array.blackManRight[i] & opponents) &&
+            (moves_array.blackManCapturesRight[i] & state.empty)) {
+          uint8_t dest = std::countr_zero(moves_array.blackManCapturesRight[i] &
+                                          state.empty);
+          moves.emplace_back(i, dest, DRCapture);
+        }
+      }
+    }
+    for (int i = 0; i < 32; i++) {
+      if (!(kings & (1u << i)))
+        continue;
+      if ((moves_array.whiteManLeft[i] & opponents) &&
+          (moves_array.kingCapturesUL[i] & state.empty)) {
+        uint8_t dest =
+            std::countr_zero(moves_array.kingCapturesUL[i] & state.empty);
+        moves.emplace_back(i, dest, ULCapture);
+      }
+      if ((moves_array.whiteManRight[i] & opponents) &&
+          (moves_array.kingCapturesUR[i] & state.empty)) {
+        uint8_t dest =
+            std::countr_zero(moves_array.kingCapturesUR[i] & state.empty);
+        moves.emplace_back(i, dest, URCapture);
+      }
+      if ((moves_array.blackManLeft[i] & opponents) &&
+          (moves_array.kingCapturesDL[i] & state.empty)) {
+        uint8_t dest =
+            std::countr_zero(moves_array.kingCapturesDL[i] & state.empty);
+        moves.emplace_back(i, dest, DLCapture);
+      }
+      if ((moves_array.blackManRight[i] & opponents) &&
+          (moves_array.kingCapturesDR[i] & state.empty)) {
+        uint8_t dest =
+            std::countr_zero(moves_array.kingCapturesDR[i] & state.empty);
+        moves.emplace_back(i, dest, DRCapture);
+      }
+    }
+  } else {
+    for (int i = 0; i < 32; i++) {
+      if (!(men & (1u << i)))
+        continue;
+      if (state.whiteToMove) {
+        if (moves_array.whiteManLeft[i] & state.empty) {
+          uint8_t dest =
+              std::countr_zero(moves_array.whiteManLeft[i] & state.empty);
+          moves.emplace_back(i, dest, ULMove);
+        }
+        if (moves_array.whiteManRight[i] & state.empty) {
+          uint8_t dest =
+              std::countr_zero(moves_array.whiteManRight[i] & state.empty);
+          moves.emplace_back(i, dest, URMove);
+        }
+      } else {
+        if (moves_array.blackManLeft[i] & state.empty) {
+          uint8_t dest =
+              std::countr_zero(moves_array.blackManLeft[i] & state.empty);
+          moves.emplace_back(i, dest, DLMove);
+        }
+        if (moves_array.blackManRight[i] & state.empty) {
+          uint8_t dest =
+              std::countr_zero(moves_array.blackManRight[i] & state.empty);
+          moves.emplace_back(i, dest, DRMove);
+        }
+      }
+    }
+    for (int i = 0; i < 32; i++) {
+      if (!(kings & (1u << i)))
+        continue;
+      if (moves_array.whiteManLeft[i] & state.empty) {
+        uint8_t dest =
+            std::countr_zero(moves_array.whiteManLeft[i] & state.empty);
+        moves.emplace_back(i, dest, ULMove);
+      }
+      if (moves_array.whiteManRight[i] & state.empty) {
+        uint8_t dest =
+            std::countr_zero(moves_array.whiteManRight[i] & state.empty);
+        moves.emplace_back(i, dest, URMove);
+      }
+      if (moves_array.blackManLeft[i] & state.empty) {
+        uint8_t dest =
+            std::countr_zero(moves_array.blackManLeft[i] & state.empty);
+        moves.emplace_back(i, dest, DLMove);
+      }
+      if (moves_array.blackManRight[i] & state.empty) {
+        uint8_t dest =
+            std::countr_zero(moves_array.blackManRight[i] & state.empty);
+        moves.emplace_back(i, dest, DRMove);
+      }
+    }
+  }
+  return moves;
+}
+
+// ────────────────────────────────────────────────────────────
+//  Apply a move. For captures, remove the jumped-over piece (computed as the
+//  midpoint). White promotes upon reaching row 0; Black promotes upon reaching
+//  row 7.
+// ────────────────────────────────────────────────────────────
+
+GameState applyMove(const GameState &state, const Move &move) {
+  GameState newState = state.copy();
+  Bitboard &currentPieces =
+      newState.whiteToMove ? newState.white : newState.black;
+  Bitboard &opponentPieces =
+      newState.whiteToMove ? newState.black : newState.white;
+
+  currentPieces &= ~(1u << move.from);
+  currentPieces |= (1u << move.to);
+  if (newState.kings & (1u << move.from)) {
+    newState.kings &= ~(1u << move.from);
+    newState.kings |= (1u << move.to);
+  }
+  if (move.type == ULCapture || move.type == URCapture ||
+      move.type == DLCapture || move.type == DRCapture) {
+    int fromRow, fromCol, toRow, toCol;
+    rcFromIndex(move.from, fromRow, fromCol);
+    rcFromIndex(move.to, toRow, toCol);
+    int capRow = (fromRow + toRow) / 2;
+    int capCol = (fromCol + toCol) / 2;
+    int capturedPos = indexFromRC(capRow, capCol);
+    if (capturedPos != -1) {
+      opponentPieces &= ~(1u << capturedPos);
+      if (newState.kings & (1u << capturedPos))
+        newState.kings &= ~(1u << capturedPos);
+    }
+  }
+  int toRow, toCol;
+  rcFromIndex(move.to, toRow, toCol);
+  if (newState.whiteToMove && toRow == 0)
+    newState.kings |= (1u << move.to);
+  if (!newState.whiteToMove && toRow == 7)
+    newState.kings |= (1u << move.to);
+
+  newState.updateEmpty();
+  newState.whiteToMove = !newState.whiteToMove;
+  return newState;
+}
+
+// ────────────────────────────────────────────────────────────
+//  Simple evaluation: material (men=1, kings=2).
+// ────────────────────────────────────────────────────────────
+
+int evaluateState(const GameState &state) {
+  int whiteCount = __builtin_popcount(state.white);
+  int blackCount = __builtin_popcount(state.black);
+  int whiteKingCount = __builtin_popcount(state.white & state.kings);
+  int blackKingCount = __builtin_popcount(state.black & state.kings);
+  int whiteScore = whiteCount + whiteKingCount * 2;
+  int blackScore = blackCount + blackKingCount * 2;
+  return whiteScore - blackScore;
+}
+
+// ────────────────────────────────────────────────────────────
+//  Minimax with alpha-beta pruning and repetition detection.
+//  The history vector stores hashes of states encountered on the current
+//  branch. If a state repeats, we treat it as a draw (evaluation 0).
+// ────────────────────────────────────────────────────────────
+
+int minimax(const GameState &state, int depth, int alpha, int beta,
+            bool maximizingPlayer, std::vector<std::size_t> &history) {
+  if (depth == 0)
+    return evaluateState(state);
+
+  std::size_t h = hashState(state);
+  // If this state is already in the history, consider it a draw.
+  if (std::find(history.begin(), history.end(), h) != history.end())
+    return 0;
+
+  history.push_back(h);
+
+  std::vector<Move> moves = generateMoves(state);
+  if (moves.empty()) {
+    history.pop_back();
+    return maximizingPlayer ? std::numeric_limits<int>::min()
+                            : std::numeric_limits<int>::max();
+  }
+
+  int bestEval;
+  if (maximizingPlayer) {
+    bestEval = std::numeric_limits<int>::min();
+    for (const Move &m : moves) {
+      GameState child = applyMove(state, m);
+      int eval = minimax(child, depth - 1, alpha, beta, false, history);
+      bestEval = std::max(bestEval, eval);
+      alpha = std::max(alpha, eval);
+      if (beta <= alpha)
+        break;
+    }
+  } else {
+    bestEval = std::numeric_limits<int>::max();
+    for (const Move &m : moves) {
+      GameState child = applyMove(state, m);
+      int eval = minimax(child, depth - 1, alpha, beta, true, history);
+      bestEval = std::min(bestEval, eval);
+      beta = std::min(beta, eval);
+      if (beta <= alpha)
+        break;
+    }
+  }
+
+  history.pop_back();
+  return bestEval;
+}
+
+Move findBestMove(const GameState &state, int depth) {
+  std::vector<Move> moves = generateMoves(state);
+  if (moves.empty())
+    throw std::runtime_error("No legal moves available");
+  Move bestMove = moves[0];
+  int bestValue = state.whiteToMove ? std::numeric_limits<int>::min()
+                                    : std::numeric_limits<int>::max();
+  int alpha = std::numeric_limits<int>::min();
+  int beta = std::numeric_limits<int>::max();
+  bool maximizing = state.whiteToMove;
+  std::vector<std::size_t> history; // History for repetition detection.
+
+  for (const Move &m : moves) {
+    GameState child = applyMove(state, m);
+    int moveValue =
+        minimax(child, depth - 1, alpha, beta, !maximizing, history);
+    if (maximizing) {
+      if (moveValue > bestValue) {
+        bestValue = moveValue;
+        bestMove = m;
+      }
+      alpha = std::max(alpha, bestValue);
+    } else {
+      if (moveValue < bestValue) {
+        bestValue = moveValue;
+        bestMove = m;
+      }
+      beta = std::min(beta, bestValue);
+    }
+  }
+  return bestMove;
+}
+
+// ────────────────────────────────────────────────────────────
+//  Main function.
+//  Black pieces on indices 0–11 (top three rows).
+//  White pieces on indices 20–31 (bottom three rows).
+// ────────────────────────────────────────────────────────────
+
+int main() {
+  auto start = std::chrono::high_resolution_clock::now();
+  GameState state;
+  // Black pieces on indices 0–11.
+  state.black = 0;
+  for (int i = 0; i < 12; i++) {
+    state.black |= (1u << i);
+  }
+  // White pieces on indices 20–31.
+  state.white = 0;
+  for (int i = 20; i < 32; i++) {
+    state.white |= (1u << i);
+  }
+  state.updateEmpty();
+  state.whiteToMove = true;
+
+  std::cout << "Initial board state:\n";
+  printGameState(state);
+
+  int searchDepth = 0;
+  do
+  {
+  std::cout << "enter search depth:";
+  std::cin >> searchDepth;
+  } while (isdigit( searchDepth));
+
+  while (state.black != 0 ||
+         state.white != 0) { // extended loop to observe potential cycles
+    std::cout << "\nFinding best move for "
+              << (state.whiteToMove ? "White" : "Black") << "...\n";
+    try {
+      Move best = findBestMove(state, searchDepth);
+      std::cout << "Best move: " << best << "\n";
+      state = applyMove(state, best);
+      std::cout << "Board after move:\n";
+      printGameState(state);
+    } catch (const std::exception &e) {
+      std::cout << "Game over: " << e.what() << "\n";
+      break;
+    }
+  }
+
+  auto end = std::chrono::high_resolution_clock::now();
+  auto duration =
+      std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+  std::cout << "\nExecution time: " << duration.count() << " ms\n";
+  return 0;
+}
