@@ -58,73 +58,28 @@ struct Point {
     uint8_t y;
 };
 
- std::unordered_map<uint8_t, Point> possitions_indexes= {
-        {23, {2, 3}},
-        {12, {1, 2}},
-        {24, {2, 4}},
-        {13, {1, 3}},
-        {00, {0, 0}},
-        {01, {0, 1}},
-        {02, {0, 2}},
-        {03, {0, 3}},
-        {04, {0, 4}},
-        {05, {0, 5}},
-        {06, {0, 6}},
-        {07, {0, 7}},
-        {10, {1, 0}},
-        {11, {1, 1}},
-        {14, {1, 4}},
-        {15, {1, 5}},
-        {16, {1, 6}},
-        {17, {1, 7}},
-        {20, {2, 0}},
-        {21, {2, 1}},
-        {22, {2, 2}},
-        {25, {2, 5}},
-        {26, {2, 6}},
-        {27, {2, 7}},
-        {30, {3, 0}},
-        {31, {3, 1}},
-        {32, {3, 2}},
-        {33, {3, 3}},
-        {34, {3, 4}},
-        {35, {3, 5}},
-        {36, {3, 6}},
-        {37, {3, 7}},
-        {40, {4, 0}},
-        {41, {4, 1}},
-        {42, {4, 2}},
-        {43, {4, 3}},
-        {44, {4, 4}},
-        {45, {4, 5}},
-        {46, {4, 6}},
-        {47, {4, 7}},
-        {50, {5, 0}},
-        {51, {5, 1}},
-        {52, {5, 2}},
-        {53, {5, 3}},
-        {54, {5, 4}},
-        {55, {5, 5}},
-        {56, {5, 6}},
-        {57, {5, 7}},
-        {60, {6, 0}},
-        {61, {6, 1}},
-        {62, {6, 2}},
-        {63, {6, 3}},
-        {64, {6, 4}},
-        {65, {6, 5}},
-        {66, {6, 6}},
-        {67, {6, 7}},
-        {70, {7, 0}},
-        {71, {7, 1}},
-        {72, {7, 2}},
-        {73, {7, 3}},
-        {74, {7, 4}},
-        {75, {7, 5}},
-        {76, {7, 6}},
-        {77, {7, 7}}
-    };
+std::unordered_map<uint8_t, std::string> boardMapping = {
+    {0, "10"}, {1, "30"}, {2, "50"}, {3, "70"},
+    {4, "01"}, {5, "21"}, {6, "41"}, {7, "61"},
+    {8, "12"}, {9, "32"}, {10, "52"}, {11, "72"},
+    {12, "03"}, {13, "23"}, {14, "43"}, {15, "63"},
+    {16, "14"}, {17, "34"}, {18, "54"}, {19, "74"},
+    {20, "05"}, {21, "25"}, {22, "45"}, {23, "65"},
+    {24, "16"}, {25, "36"}, {26, "56"}, {27, "76"},
+    {28, "07"}, {29, "27"}, {30, "47"}, {31, "67"}
+};
 
+// Mapping from 32-bit index (0-31) to (x, y) in a 64-bit board
+std::unordered_map<uint8_t, Point> positions_indexes = {
+	{0,  {1, 0}}, {1,  {3, 0}}, {2,  {5, 0}}, {3,  {7, 0}},
+	{4,  {0, 1}}, {5,  {2, 1}}, {6,  {4, 1}}, {7,  {6, 1}},
+	{8,  {1, 2}}, {9,  {3, 2}}, {10, {5, 2}}, {11, {7, 2}},
+	{12, {0, 3}}, {13, {2, 3}}, {14, {4, 3}}, {15, {6, 3}},
+	{16, {1, 4}}, {17, {3, 4}}, {18, {5, 4}}, {19, {7, 4}},
+	{20, {0, 5}}, {21, {2, 5}}, {22, {4, 5}}, {23, {6, 5}},
+	{24, {1, 6}}, {25, {3, 6}}, {26, {5, 6}}, {27, {7, 6}},
+	{28, {0, 7}}, {29, {2, 7}}, {30, {4, 7}}, {31, {6, 7}}
+};
 struct GameState {
     Bitboard white; // Bitboard for white pieces
     Bitboard black; // Bitboard for black pieces
@@ -709,10 +664,10 @@ public:
 
         // Build JSON message to send the move.
         auto moveMsg = sio::object_message::create();
-        moveMsg->get_map()["index"] = sio::string_message::create(std::to_string(bestMove.from));
-        moveMsg->get_map()["x"] = sio::int_message::create(possitions_indexes.at(bestMove.to).x);
-        moveMsg->get_map()["y"] = sio::int_message::create(possitions_indexes.at(bestMove.to).y);
-        moveMsg->get_map()["king"] = sio::bool_message::create(isKing(possitions_indexes.at(bestMove.to).x,gameState.whiteToMove));
+        moveMsg->get_map()["index"] = sio::string_message::create(boardMapping.at(bestMove.from));
+        moveMsg->get_map()["x"] = sio::int_message::create(positions_indexes.at(bestMove.to).x);
+        moveMsg->get_map()["y"] = sio::int_message::create(positions_indexes.at(bestMove.to).y);
+        moveMsg->get_map()["king"] = sio::bool_message::create(isKing(positions_indexes.at(bestMove.to).x,gameState.whiteToMove));
         sio::message::list li;
         li.push(moveMsg);
         li.push(sio::int_message::create(gameState.whiteToMove?0:1));
