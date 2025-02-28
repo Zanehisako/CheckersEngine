@@ -52,6 +52,79 @@ ostream& operator<<(ostream &os, const Move &m) {
     return os;
 }
 
+// Define a struct to hold x and y values
+struct Point {
+    uint8_t x;
+    uint8_t y;
+};
+
+ std::unordered_map<uint8_t, Point> possitions_indexes= {
+        {23, {2, 3}},
+        {12, {1, 2}},
+        {24, {2, 4}},
+        {13, {1, 3}},
+        {00, {0, 0}},
+        {01, {0, 1}},
+        {02, {0, 2}},
+        {03, {0, 3}},
+        {04, {0, 4}},
+        {05, {0, 5}},
+        {06, {0, 6}},
+        {07, {0, 7}},
+        {10, {1, 0}},
+        {11, {1, 1}},
+        {14, {1, 4}},
+        {15, {1, 5}},
+        {16, {1, 6}},
+        {17, {1, 7}},
+        {20, {2, 0}},
+        {21, {2, 1}},
+        {22, {2, 2}},
+        {25, {2, 5}},
+        {26, {2, 6}},
+        {27, {2, 7}},
+        {30, {3, 0}},
+        {31, {3, 1}},
+        {32, {3, 2}},
+        {33, {3, 3}},
+        {34, {3, 4}},
+        {35, {3, 5}},
+        {36, {3, 6}},
+        {37, {3, 7}},
+        {40, {4, 0}},
+        {41, {4, 1}},
+        {42, {4, 2}},
+        {43, {4, 3}},
+        {44, {4, 4}},
+        {45, {4, 5}},
+        {46, {4, 6}},
+        {47, {4, 7}},
+        {50, {5, 0}},
+        {51, {5, 1}},
+        {52, {5, 2}},
+        {53, {5, 3}},
+        {54, {5, 4}},
+        {55, {5, 5}},
+        {56, {5, 6}},
+        {57, {5, 7}},
+        {60, {6, 0}},
+        {61, {6, 1}},
+        {62, {6, 2}},
+        {63, {6, 3}},
+        {64, {6, 4}},
+        {65, {6, 5}},
+        {66, {6, 6}},
+        {67, {6, 7}},
+        {70, {7, 0}},
+        {71, {7, 1}},
+        {72, {7, 2}},
+        {73, {7, 3}},
+        {74, {7, 4}},
+        {75, {7, 5}},
+        {76, {7, 6}},
+        {77, {7, 7}}
+    };
+
 struct GameState {
     Bitboard white; // Bitboard for white pieces
     Bitboard black; // Bitboard for black pieces
@@ -491,6 +564,26 @@ Move findBestMove(const GameState &state, int depth) {
     return bestMove;
 }
 
+inline bool isKing(uint8_t x,bool white) {
+    switch (white)
+    {
+    case true:
+    if (x==7)
+    {
+        return true;
+    }
+    return false;
+
+    case false:
+    if (x==0)
+    {
+        return true;
+    }
+    return false;
+    }
+
+}
+
 //////////////////////////////////////////////////////////////////////////////
 // Socket.IO Client & Integration Code
 //////////////////////////////////////////////////////////////////////////////
@@ -520,7 +613,7 @@ void updateGameStateFromJSON(const sio::message::ptr &msg, GameState &state) {
     // board[1] holds black pieces (bottom rows).
     // Our engine: state.black = pieces on top, state.white = pieces on bottom.
     // So assign board[0] to state.black and board[1] to state.white.
-    auto arr0 = boardArr.at(0)->get_vector();
+    auto arr0 = boardArr.at(1)->get_vector();
     for (auto &pieceMsg : arr0) {
         if (pieceMsg->get_flag() != sio::message::flag_object) continue;
         auto m = pieceMsg->get_map();
@@ -534,7 +627,7 @@ void updateGameStateFromJSON(const sio::message::ptr &msg, GameState &state) {
                 state.kings |= (1u << idx);
         }
     }
-    auto arr1 = boardArr.at(1)->get_vector();
+    auto arr1 = boardArr.at(0)->get_vector();
     for (auto &pieceMsg : arr1) {
         if (pieceMsg->get_flag() != sio::message::flag_object) continue;
         auto m = pieceMsg->get_map();
@@ -569,10 +662,28 @@ public:
         client.set_open_listener([this]() {
             cout << "Connected to server" << endl;
             // Example: join room "room1"
-            std::cout << "Enter room number:\n";
+            int choise;
+            std::cout << "1: create room :\n2:join room:\n";
+            std::cin >> choise;
             std::string room;
+            std::cout << "Enter room name:\n";
             std::cin >> room;
-            client.socket()->emit("join room as player", room);
+            std::cout <<"choise:" << choise << std::endl;
+            switch (choise)
+            {
+            case 1:
+                std::cout << "creating a room\n";
+                    client.socket()->emit("create room", room);
+                    //gameState.whiteToMove = true;
+                    break;
+            case 2:
+                std::cout << "joining as a player\n";
+                    client.socket()->emit("join room as player", room);
+                    //gameState.whiteToMove = false;
+                    break;
+            default:
+                break;
+            }
         });
         client.set_close_listener([](sio::client::close_reason const &reason) {
             cout << "Disconnected from server" << endl;
@@ -598,11 +709,16 @@ public:
 
         // Build JSON message to send the move.
         auto moveMsg = sio::object_message::create();
-        moveMsg->get_map()["from"] = sio::int_message::create(bestMove.from);
-        moveMsg->get_map()["to"] = sio::int_message::create(bestMove.to);
-        moveMsg->get_map()["type"] = sio::int_message::create(static_cast<int>(bestMove.type));
+        moveMsg->get_map()["index"] = sio::string_message::create(std::to_string(bestMove.from));
+        moveMsg->get_map()["x"] = sio::int_message::create(possitions_indexes.at(bestMove.to).x);
+        moveMsg->get_map()["y"] = sio::int_message::create(possitions_indexes.at(bestMove.to).y);
+        moveMsg->get_map()["king"] = sio::bool_message::create(isKing(possitions_indexes.at(bestMove.to).x,gameState.whiteToMove));
+        sio::message::list li;
+        li.push(moveMsg);
+        li.push(sio::int_message::create(gameState.whiteToMove?0:1));
+        li.push(sio::int_message::create(1));
 
-        client.socket()->emit("move piece", moveMsg);
+        client.socket()->emit("move piece", li);
     } catch (const std::exception &e) {
         cerr << "Error computing move: " << e.what() << endl;
     }
