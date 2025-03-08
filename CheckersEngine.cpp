@@ -99,6 +99,13 @@ constexpr std::array<uint32_t, 32> generateZobristKeys(uint32_t seed) {
     return keys;
 }
 
+constexpr bool repatingMove(std::vector<uint32_t> history) {
+    if (history.back() == history[history.size() -2])
+    {
+        return true;
+    }
+}
+
 constexpr int indexFromRC(int row, int col) {
     if (row < 0 || row >= 8 || col < 0 || col >= 8)
         return -1;
@@ -444,8 +451,9 @@ GameState applyMove(const GameState& state, const Move& move) noexcept {
     // Promotion check
     if (!(newState.kings & toBit)) {
         if ((state.whiteToMove && (move.to >= 28)) ||
-            (!state.whiteToMove && (move.to <= 3)))
+            (!state.whiteToMove && (move.to <= 3))) {
             newState.kings |= toBit;
+        }
     }
     
     newState.updateEmpty();
@@ -638,8 +646,7 @@ inline int minimax(const GameState& state, int depth, int alpha, int beta,
     return bestEval;
 }
 
-Move findBestMove(const GameState& state, int depth) {
-    auto start = std::chrono::high_resolution_clock::now();
+Move findBestMove(const GameState& state, int depth,std::vector<uint32_t> gameHistory) {
     MoveList moves = generateMoves(state);
     std::cout << "moves length:" << moves.count << std::endl;
     if (moves.count == 0)
@@ -653,6 +660,21 @@ Move findBestMove(const GameState& state, int depth) {
     for (const Move* m = moves.begin(); m != moves.end(); ++m) {
         GameState child = applyMove(state, *m);
         int moveValue = minimax(child, depth - 1, alpha, beta, tt);
+         // Check if this state has been repeated more than twice
+        std::cout << "child hash: "<<child.hash<<std::endl;
+        gameHistory.push_back(child.hash);
+		bool found = std::find(gameHistory.begin(), gameHistory.end(), child.hash) != gameHistory.end();
+		std::cout << "Found: " << (found ? "Yes" : "No") << std::endl;
+        int repeatCount = std::count(gameHistory.begin(), gameHistory.end(), child.hash);
+        std::cout << "repeated count :"<<repeatCount<<std::endl;
+        if (repeatCount >= 1) {
+            std::cout << "repeated move\n";
+            if (state.whiteToMove) {
+                moveValue -= 1000000;  // Punish for repeating (white is maximizing)
+            } else {
+                moveValue += 1000000;  // Punish for repeating (black is minimizing)
+            }
+        }
         if (state.whiteToMove) {
             if (moveValue > bestValue) {
                 bestValue = moveValue;
@@ -668,27 +690,24 @@ Move findBestMove(const GameState& state, int depth) {
         }
     }
     
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     std::cout << "Best move evaluation: " << bestValue << "\n";
-    std::cout << "Search time: " << duration.count() << " ms\n";
     return bestMove;
 }
 
 
 
-inline bool isKing(uint8_t x,bool white) {
+inline bool isKing(uint8_t y,bool white) {
     switch (white)
     {
     case true:
-    if (x==7)
+    if (y==7)
     {
         return true;
     }
     return false;
 
     case false:
-    if (x==0)
+    if (y==0)
     {
         return true;
     }
@@ -753,6 +772,7 @@ void updateGameStateFromJSON(const sio::message::ptr &msg, GameState &state) {
         }
     }
     state.updateEmpty();
+    state.hash = computeInitialHash(state);
     std::cout << "GameState updated from board JSON." << std::endl;
     printGameState(state);
 }
@@ -768,6 +788,8 @@ public:
     GameState gameState;
     bool isWhite;
     int searchDepth=1;
+	std::vector<uint32_t> moveHistoryWhite;  // Track white state hashes 
+	std::vector<uint32_t> moveHistoryBlack;  // Track black state hashes
 
     CheckersClient() { }
 
@@ -811,14 +833,18 @@ public:
         client.socket()->on("board", [this](sio::event const &ev) {
             std::cout << "Received board update from server." << std::endl;
             updateGameStateFromJSON(ev.get_message(), gameState);
+            isWhite ? moveHistoryWhite.push_back(gameState.hash) : moveHistoryBlack.push_back(gameState.hash);// Add new state to history
         });
 
         // Listen for turn notifications.
         client.socket()->on("turn", [this](sio::event const &ev) {
             std::cout << "It's our turn now." << std::endl;
             try {
-                gameState.whiteToMove = isWhite ? !isWhite : isWhite;
-                Move bestMove = findBestMove(gameState, searchDepth);
+                gameState.whiteToMove = isWhite;
+				auto start = std::chrono::high_resolution_clock::now();
+                Move bestMove = findBestMove(gameState, searchDepth,isWhite?moveHistoryWhite:moveHistoryBlack);
+				auto end = std::chrono::high_resolution_clock::now();
+				double duration_sec = std::chrono::duration_cast<std::chrono::seconds>(end - start).count();
                 std::cout << "Computed best move: " << bestMove << std::endl;
 
                 // Build JSON message to send the move.
@@ -827,11 +853,11 @@ public:
                 // Use the y–coordinate (from positions_indexes) to decide promotion.
                 moveMsg->get_map()["x"] = sio::int_message::create(positions_indexes.at(bestMove.to).x);
                 moveMsg->get_map()["y"] = sio::int_message::create(positions_indexes.at(bestMove.to).y);
-                moveMsg->get_map()["king"] = sio::bool_message::create(isKing(positions_indexes.at(bestMove.to).y, gameState.whiteToMove));
+                moveMsg->get_map()["king"] = sio::bool_message::create(isKing(positions_indexes.at(bestMove.from).y, gameState.whiteToMove));
                 sio::message::list li;
                 li.push(moveMsg);
-                li.push(sio::int_message::create(gameState.whiteToMove ? 1 : 0));
-                li.push(sio::int_message::create(1));
+                li.push(sio::int_message::create(isWhite ? 1 : 0));
+                li.push(sio::double_message::create(duration_sec));
 
                 client.socket()->emit("move piece", li);
             } catch (const std::exception &e) {
