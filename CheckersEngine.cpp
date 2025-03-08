@@ -19,6 +19,14 @@
 
 // Using 32-bit bitboards - more efficient for this application
 using Bitboard = uint32_t;
+// Add these constants near your other definitions
+constexpr Bitboard CENTER_SQUARES = (1U << 10) | (1U << 11) | (1U << 14) | (1U << 15) |
+                                   (1U << 16) | (1U << 17) | (1U << 20) | (1U << 21);
+constexpr Bitboard EDGE_SQUARES = (1U << 0) | (1U << 1) | (1U << 2) | (1U << 3) |
+                                 (1U << 4) | (1U << 7) | (1U << 24) | (1U << 27) |
+                                 (1U << 28) | (1U << 29) | (1U << 30) | (1U << 31);
+constexpr Bitboard PROMOTION_ZONE_WHITE = (1U << 28) | (1U << 29) | (1U << 30) | (1U << 31);
+constexpr Bitboard PROMOTION_ZONE_BLACK = (1U << 0) | (1U << 1) | (1U << 2) | (1U << 3);
 // Define a struct to hold x and y values
 struct Point {
     uint8_t x;
@@ -121,6 +129,23 @@ constexpr std::array<uint32_t, 32> zobrist_white_king = generateZobristKeys(6789
 constexpr std::array<uint32_t, 32> zobrist_black_man = generateZobristKeys(54321);
 constexpr std::array<uint32_t, 32> zobrist_black_king = generateZobristKeys(98765);
 constexpr uint32_t zobrist_side_to_move = 0x12345678;
+
+uint32_t computeInitialHash(const GameState& state) {
+    uint32_t hash = 0;
+    for (int pos = 0; pos < 32; pos++) {
+        Bitboard bit = 1U << pos;
+        if (state.white & bit) {
+            if (state.kings & bit) hash ^= zobrist_white_king[pos];
+            else hash ^= zobrist_white_man[pos];
+        } else if (state.black & bit) {
+            if (state.kings & bit) hash ^= zobrist_black_king[pos];
+            else hash ^= zobrist_black_man[pos];
+        }
+    }
+    if (state.whiteToMove) hash ^= zobrist_side_to_move;
+    return hash;
+}
+
 
 // Pre-computed move masks for each square and direction
 struct MoveArrays {
@@ -388,15 +413,17 @@ GameState applyMove(const GameState& state, const Move& move) noexcept {
     GameState newState = state;
     Bitboard fromBit = 1U << move.from;
     Bitboard toBit = 1U << move.to;
-    
-    if (state.whiteToMove)
+     // Update hash for moving piece
+    if (state.whiteToMove) {
+        newState.hash ^= (state.kings & fromBit) ? zobrist_white_king[move.from] : zobrist_white_man[move.from];
         newState.white = (newState.white & ~fromBit) | toBit;
-    else
+        newState.hash ^= (state.kings & fromBit) ? zobrist_white_king[move.to] : zobrist_white_man[move.to];
+    } else {
+        newState.hash ^= (state.kings & fromBit) ? zobrist_black_king[move.from] : zobrist_black_man[move.from];
         newState.black = (newState.black & ~fromBit) | toBit;
-    
-    if (state.kings & fromBit)
-        newState.kings = (newState.kings & ~fromBit) | toBit;
-    
+        newState.hash ^= (state.kings & fromBit) ? zobrist_black_king[move.to] : zobrist_black_man[move.to];
+    }
+
     // Handle captures
     if (move.type <= DLCapture) {
         auto [fromRow, fromCol] = squareCoords[move.from];
@@ -430,12 +457,77 @@ GameState applyMove(const GameState& state, const Move& move) noexcept {
 
 
 // Simple evaluation: piece count weighted by value
+// Enhanced evaluation function
 inline int evaluateState(const GameState& state) noexcept {
-    int whiteScore = __builtin_popcount(state.white & ~state.kings) * 100 +
-                     __builtin_popcount(state.white & state.kings) * 250;
-    int blackScore = __builtin_popcount(state.black & ~state.kings) * 100 +
-                     __builtin_popcount(state.black & state.kings) * 250;
-    return state.whiteToMove ? (whiteScore - blackScore) : (blackScore - whiteScore);
+    // Early game-over checks
+    if (state.white == 0) return state.whiteToMove ? -INF : INF;
+    if (state.black == 0) return state.whiteToMove ? INF : -INF;
+
+    // Material count
+    int whiteMen = __builtin_popcount(state.white & ~state.kings);
+    int blackMen = __builtin_popcount(state.black & ~state.kings);
+    int whiteKings = __builtin_popcount(state.white & state.kings);
+    int blackKings = __builtin_popcount(state.black & state.kings);
+    
+    int materialScore = (whiteMen * 100 + whiteKings * 250) -
+                       (blackMen * 100 + blackKings * 250);
+
+    // Positional factors
+    int whitePos = 0, blackPos = 0;
+    
+    // Center control bonus (encourages controlling the middle)
+    whitePos += __builtin_popcount(state.white & CENTER_SQUARES) * 10;
+    blackPos += __builtin_popcount(state.black & CENTER_SQUARES) * 10;
+    
+    // Edge penalty (discourages pieces on edges)
+    whitePos -= __builtin_popcount(state.white & EDGE_SQUARES) * 5;
+    blackPos -= __builtin_popcount(state.black & EDGE_SQUARES) * 5;
+    
+    // Advancement bonus (encourages moving toward promotion)
+    whitePos += __builtin_popcount(state.white & PROMOTION_ZONE_WHITE) * 20;
+    blackPos += __builtin_popcount(state.black & PROMOTION_ZONE_BLACK) * 20;
+    
+    // Mobility bonus (counts legal non-capture moves)
+    MoveList moves = generateMoves(state);
+    int mobility = moves.count * 5;  // Small bonus per legal move
+    
+    // King protection (bonus for men near promotion that are safe)
+    int whiteSafeMen = __builtin_popcount(state.white & ~state.kings & PROMOTION_ZONE_WHITE & ~state.black);
+    int blackSafeMen = __builtin_popcount(state.black & ~state.kings & PROMOTION_ZONE_BLACK & ~state.white);
+    
+    // Combine scores
+    int whiteScore = materialScore + whitePos + (state.whiteToMove ? mobility : 0) + whiteSafeMen * 15;
+    int blackScore = -materialScore + blackPos + (!state.whiteToMove ? mobility : 0) + blackSafeMen * 15;
+    
+    // Piece-square table for fine-tuned positioning
+    static constexpr std::array<int, 32> pieceSquareTable = {
+        4, 4, 4, 4,    // Row 0
+        2, 3, 3, 2,    // Row 1
+        2, 3, 3, 2,    // Row 2
+        1, 2, 2, 1,    // Row 3
+        0, 1, 1, 0,    // Row 4
+        -1, 0, 0, -1,  // Row 5
+        -2, -1, -1, -2,// Row 6
+        -4, -4, -4, -4 // Row 7
+    };
+    
+    int pstScore = 0;
+    Bitboard whitePieces = state.white;
+    Bitboard blackPieces = state.black;
+    while (whitePieces) {
+        uint8_t pos = std::countr_zero(whitePieces);
+        pstScore += pieceSquareTable[pos];
+        whitePieces &= whitePieces - 1;
+    }
+    while (blackPieces) {
+        uint8_t pos = std::countr_zero(blackPieces);
+        pstScore -= pieceSquareTable[31 - pos];  // Mirror for black
+        blackPieces &= blackPieces - 1;
+    }
+    
+    // Final evaluation
+    int totalScore = (whiteScore - blackScore) + pstScore * 2;
+    return state.whiteToMove ? totalScore : -totalScore;
 }
 
 // Transposition table for alpha-beta search
@@ -675,6 +767,7 @@ public:
     sio::client client;
     GameState gameState;
     bool isWhite;
+    int searchDepth=1;
 
     CheckersClient() { }
 
@@ -688,7 +781,8 @@ public:
             std::string room;
            std::cout << "Enter room name:\n";
            std::cin >> room;
-           std::cout << "choice: " << choice << std::endl;
+           std::cout << "Enter Search depth:\n";
+           std::cin >> searchDepth;
             switch (choice)
             {
             case 1:
@@ -724,7 +818,6 @@ public:
             std::cout << "It's our turn now." << std::endl;
             try {
                 gameState.whiteToMove = isWhite ? !isWhite : isWhite;
-                int searchDepth = 20; // adjust as needed
                 Move bestMove = findBestMove(gameState, searchDepth);
                 std::cout << "Computed best move: " << bestMove << std::endl;
 
