@@ -17,6 +17,10 @@
 #define __builtin_popcount _mm_popcnt_u32
 #endif
 
+// Global random number generator (or define within scope)
+std::random_device rd;
+std::mt19937 rng(rd());
+
 // Using 32-bit bitboards - more efficient for this application
 using Bitboard = uint32_t;
 // Add these constants near your other definitions
@@ -55,6 +59,37 @@ std::unordered_map<uint8_t, Point> positions_indexes = {
 	{24, {1, 6}}, {25, {3, 6}}, {26, {5, 6}}, {27, {7, 6}},
 	{28, {0, 7}}, {29, {2, 7}}, {30, {4, 7}}, {31, {6, 7}}
 };
+// Piece-square table for white men: higher values toward promotion, lower on edges
+static constexpr std::array<int, 32> whiteManPST = {
+    0,  0,  0,  0,  // Row 0
+    5, 10, 10,  5,  // Row 1
+   10, 15, 15, 10,  // Row 2
+   15, 22, 22, 15,  // Row 3
+   20, 25, 25, 20,  // Row 4
+   25, 30, 30, 25,  // Row 5
+   30, 35, 35, 30,  // Row 6
+   35, 40, 40, 35   // Row 7
+};
+
+// Piece-square table for kings: higher values in center
+static constexpr std::array<int, 32> kingPST = {
+    // Row 0
+    0, 5, 5, 0,
+    // Row 1
+    5, 10, 10, 5,
+    // Row 2
+    10, 15, 15, 10,
+    // Row 3
+    15, 20, 20, 15,
+    // Row 4
+    15, 20, 20, 15,
+    // Row 5
+    10, 15, 15, 10,
+    // Row 6
+    5, 10, 10, 5,
+    // Row 7
+    0, 5, 5, 0
+};
 
 enum MoveType : uint8_t {
     URCapture, ULCapture, DRCapture, DLCapture,
@@ -66,6 +101,10 @@ struct Move {
     MoveType type;
     Move() = default;
     Move(uint8_t f, uint8_t t, MoveType mt) : from(f), to(t), type(mt) {}
+	bool operator==(const Move& other) const {
+		// Compare the relevant members of Move
+		return this->from== other.from && this->to == other.to;
+	}
 };
 std::ostream& operator<<(std::ostream &os, const Move &m) {
     os << "from:" << static_cast<int>(m.from)
@@ -463,6 +502,132 @@ GameState applyMove(const GameState& state, const Move& move) noexcept {
     return newState;
 }
 
+Bitboard piecesUnderThreat(const GameState& state, bool forWhite) noexcept {
+    Bitboard ourPieces = forWhite ? state.white : state.black;
+    Bitboard opponentPieces = forWhite ? state.black : state.white;
+    Bitboard opponentKings = opponentPieces & state.kings;
+    Bitboard opponentMen = opponentPieces & ~state.kings;
+    Bitboard empty = state.empty;
+    Bitboard threatened = 0;
+
+    if (forWhite) {
+        // Opponent is black; check captures by black pieces
+        // Black men capture upward (UL, UR)
+        Bitboard pieces = opponentMen;
+        while (pieces) {
+            uint8_t sq = std::countr_zero(pieces);
+            pieces &= pieces - 1;
+
+            // Up-left capture
+            Bitboard target = moves_array.blackManCaptureLeft[sq];
+            if (target && (empty & target)) {
+                uint8_t to = std::countr_zero(target);
+                auto [fromRow, fromCol] = squareCoords[sq];
+                auto [toRow, toCol] = squareCoords[to];
+                int midRow = (fromRow + toRow) / 2;
+                int midCol = (fromCol + toCol) / 2;
+                int midPos = indexFromRC(midRow, midCol);
+                if (midPos >= 0 && (ourPieces & (1U << midPos))) {
+                    threatened |= (1U << midPos);
+                }
+            }
+
+            // Up-right capture
+            target = moves_array.blackManCaptureRight[sq];
+            if (target && (empty & target)) {
+                uint8_t to = std::countr_zero(target);
+                auto [fromRow, fromCol] = squareCoords[sq];
+                auto [toRow, toCol] = squareCoords[to];
+                int midRow = (fromRow + toRow) / 2;
+                int midCol = (fromCol + toCol) / 2;
+                int midPos = indexFromRC(midRow, midCol);
+                if (midPos >= 0 && (ourPieces & (1U << midPos))) {
+                    threatened |= (1U << midPos);
+                }
+            }
+        }
+
+        // Black kings capture in all directions
+        pieces = opponentKings;
+        while (pieces) {
+            uint8_t sq = std::countr_zero(pieces);
+            pieces &= pieces - 1;
+            for (auto dir : {moves_array.kingCaptureUL[sq], moves_array.kingCaptureUR[sq],
+                             moves_array.kingCaptureDL[sq], moves_array.kingCaptureDR[sq]}) {
+                if (dir && (empty & dir)) {
+                    uint8_t to = std::countr_zero(dir);
+                    auto [fromRow, fromCol] = squareCoords[sq];
+                    auto [toRow, toCol] = squareCoords[to];
+                    int midRow = (fromRow + toRow) / 2;
+                    int midCol = (fromCol + toCol) / 2;
+                    int midPos = indexFromRC(midRow, midCol);
+                    if (midPos >= 0 && (ourPieces & (1U << midPos))) {
+                        threatened |= (1U << midPos);
+                    }
+                }
+            }
+        }
+    } else {
+        // Opponent is white; check captures by white pieces
+        // White men capture downward (DL, DR)
+        Bitboard pieces = opponentMen;
+        while (pieces) {
+            uint8_t sq = std::countr_zero(pieces);
+            pieces &= pieces - 1;
+
+            // Down-left capture
+            Bitboard target = moves_array.whiteManCaptureLeft[sq];
+            if (target && (empty & target)) {
+                uint8_t to = std::countr_zero(target);
+                auto [fromRow, fromCol] = squareCoords[sq];
+                auto [toRow, toCol] = squareCoords[to];
+                int midRow = (fromRow + toRow) / 2;
+                int midCol = (fromCol + toCol) / 2;
+                int midPos = indexFromRC(midRow, midCol);
+                if (midPos >= 0 && (ourPieces & (1U << midPos))) {
+                    threatened |= (1U << midPos);
+                }
+            }
+
+            // Down-right capture
+            target = moves_array.whiteManCaptureRight[sq];
+            if (target && (empty & target)) {
+                uint8_t to = std::countr_zero(target);
+                auto [fromRow, fromCol] = squareCoords[sq];
+                auto [toRow, toCol] = squareCoords[to];
+                int midRow = (fromRow + toRow) / 2;
+                int midCol = (fromCol + toCol) / 2;
+                int midPos = indexFromRC(midRow, midCol);
+                if (midPos >= 0 && (ourPieces & (1U << midPos))) {
+                    threatened |= (1U << midPos);
+                }
+            }
+        }
+
+        // White kings capture in all directions
+        pieces = opponentKings;
+        while (pieces) {
+            uint8_t sq = std::countr_zero(pieces);
+            pieces &= pieces - 1;
+            for (auto dir : {moves_array.kingCaptureUL[sq], moves_array.kingCaptureUR[sq],
+                             moves_array.kingCaptureDL[sq], moves_array.kingCaptureDR[sq]}) {
+                if (dir && (empty & dir)) {
+                    uint8_t to = std::countr_zero(dir);
+                    auto [fromRow, fromCol] = squareCoords[sq];
+                    auto [toRow, toCol] = squareCoords[to];
+                    int midRow = (fromRow + toRow) / 2;
+                    int midCol = (fromCol + toCol) / 2;
+                    int midPos = indexFromRC(midRow, midCol);
+                    if (midPos >= 0 && (ourPieces & (1U << midPos))) {
+                        threatened |= (1U << midPos);
+                    }
+                }
+            }
+        }
+    }
+
+    return threatened;
+}
 
 // Simple evaluation: piece count weighted by value
 // Enhanced evaluation function
@@ -476,65 +641,131 @@ inline int evaluateState(const GameState& state) noexcept {
     int blackMen = __builtin_popcount(state.black & ~state.kings);
     int whiteKings = __builtin_popcount(state.white & state.kings);
     int blackKings = __builtin_popcount(state.black & state.kings);
-    
-    int materialScore = (whiteMen * 100 + whiteKings * 250) -
-                       (blackMen * 100 + blackKings * 250);
+    int materialScore = (whiteMen * 70 + whiteKings * 250) -
+                        (blackMen * 70 + blackKings * 250);
 
-    // Positional factors
-    int whitePos = 0, blackPos = 0;
-    
-    // Center control bonus (encourages controlling the middle)
-    whitePos += __builtin_popcount(state.white & CENTER_SQUARES) * 10;
-    blackPos += __builtin_popcount(state.black & CENTER_SQUARES) * 10;
-    
-    // Edge penalty (discourages pieces on edges)
-    whitePos -= __builtin_popcount(state.white & EDGE_SQUARES) * 5;
-    blackPos -= __builtin_popcount(state.black & EDGE_SQUARES) * 5;
-    
-    // Advancement bonus (encourages moving toward promotion)
-    whitePos += __builtin_popcount(state.white & PROMOTION_ZONE_WHITE) * 20;
-    blackPos += __builtin_popcount(state.black & PROMOTION_ZONE_BLACK) * 20;
-    
-    // Mobility bonus (counts legal non-capture moves)
-    MoveList moves = generateMoves(state);
-    int mobility = moves.count * 5;  // Small bonus per legal move
-    
-    // King protection (bonus for men near promotion that are safe)
-    int whiteSafeMen = __builtin_popcount(state.white & ~state.kings & PROMOTION_ZONE_WHITE & ~state.black);
-    int blackSafeMen = __builtin_popcount(state.black & ~state.kings & PROMOTION_ZONE_BLACK & ~state.white);
-    
-    // Combine scores
-    int whiteScore = materialScore + whitePos + (state.whiteToMove ? mobility : 0) + whiteSafeMen * 15;
-    int blackScore = -materialScore + blackPos + (!state.whiteToMove ? mobility : 0) + blackSafeMen * 15;
-    
-    // Piece-square table for fine-tuned positioning
-    static constexpr std::array<int, 32> pieceSquareTable = {
-        4, 4, 4, 4,    // Row 0
-        2, 3, 3, 2,    // Row 1
-        2, 3, 3, 2,    // Row 2
-        1, 2, 2, 1,    // Row 3
-        0, 1, 1, 0,    // Row 4
-        -1, 0, 0, -1,  // Row 5
-        -2, -1, -1, -2,// Row 6
-        -4, -4, -4, -4 // Row 7
-    };
-    
+    // PST score
     int pstScore = 0;
+    Bitboard whiteMenBB = state.white & ~state.kings;
+    Bitboard whiteKingsBB = state.white & state.kings;
+    Bitboard blackMenBB = state.black & ~state.kings;
+    Bitboard blackKingsBB = state.black & state.kings;
+
+    while (whiteMenBB) {
+        uint8_t pos = std::countr_zero(whiteMenBB);
+        pstScore += whiteManPST[pos] ;
+        whiteMenBB &= whiteMenBB - 1;
+    }
+    while (whiteKingsBB) {
+        uint8_t pos = std::countr_zero(whiteKingsBB);
+        pstScore += kingPST[pos];
+        whiteKingsBB &= whiteKingsBB - 1;
+    }
+    while (blackMenBB) {
+        uint8_t pos = std::countr_zero(blackMenBB);
+        pstScore -= whiteManPST[31 - pos];  // Mirror for black men
+        blackMenBB &= blackMenBB - 1;
+    }
+    while (blackKingsBB) {
+        uint8_t pos = std::countr_zero(blackKingsBB);
+        pstScore -= kingPST[pos];  // Same table for black kings
+        blackKingsBB &= blackKingsBB - 1;
+    }
+
+	//Center control bonus 
+	int whiteCenterControl = __builtin_popcount(state.white & CENTER_SQUARES);
+	int blackCenterControl = __builtin_popcount(state.black & CENTER_SQUARES);
+	int centerControlBonus = (whiteCenterControl - blackCenterControl) * 10;
+
+	//Edge control bonus 
+	int whiteEdgeControl = __builtin_popcount(state.white & EDGE_SQUARES);
+	int blackEdgeControl = __builtin_popcount(state.black & EDGE_SQUARES);
+	int edgeControlBonus = (whiteEdgeControl - blackEdgeControl) * 5;
+
+	//Promotion bonus 
+	int whitePromotion = __builtin_popcount(state.white & PROMOTION_ZONE_WHITE);
+	int blackPromotion = __builtin_popcount(state.black & PROMOTION_ZONE_BLACK);
+	int promotionBonus= (whitePromotion- blackPromotion) * 10;
+
+    // Mobility bonus
+    MoveList moves = generateMoves(state);
+    int mobility = moves.count * 5;  // 5 points per legal move
+
+    // Connected pieces bonus
+    int whiteConnections = 0;
     Bitboard whitePieces = state.white;
-    Bitboard blackPieces = state.black;
     while (whitePieces) {
-        uint8_t pos = std::countr_zero(whitePieces);
-        pstScore += pieceSquareTable[pos];
+        uint8_t sq = std::countr_zero(whitePieces);
         whitePieces &= whitePieces - 1;
+        Bitboard adj = moves_array.whiteManLeft[sq] | moves_array.whiteManRight[sq] |
+                       moves_array.blackManLeft[sq] | moves_array.blackManRight[sq];
+        whiteConnections += __builtin_popcount(adj & state.white);
     }
+    whiteConnections /= 2;  // Each connection counted twice
+
+    int blackConnections = 0;
+    Bitboard blackPieces = state.black;
     while (blackPieces) {
-        uint8_t pos = std::countr_zero(blackPieces);
-        pstScore -= pieceSquareTable[31 - pos];  // Mirror for black
+        uint8_t sq = std::countr_zero(blackPieces);
         blackPieces &= blackPieces - 1;
+        Bitboard adj = moves_array.whiteManLeft[sq] | moves_array.whiteManRight[sq] |
+                       moves_array.blackManLeft[sq] | moves_array.blackManRight[sq];
+        blackConnections += __builtin_popcount(adj & state.black);
     }
-    
-    // Final evaluation
-    int totalScore = (whiteScore - blackScore) + pstScore * 2;
+    blackConnections /= 2;
+
+    int connectedBonus = (whiteConnections - blackConnections) * 10;  // 10 per connection
+
+    // Back rank king bonus
+    int whiteBackRankKings = __builtin_popcount(state.white & state.kings & 0xF0000000);  // Squares 28-31
+    int blackBackRankKings = __builtin_popcount(state.black & state.kings & 0x0000000F);  // Squares 0-3
+    int backRankKingBonus = (whiteBackRankKings - blackBackRankKings) * 20;  // 20 per king
+
+      // Threat detection
+    int ourThreatened = __builtin_popcount(piecesUnderThreat(state, state.whiteToMove));
+    int theirThreatened = __builtin_popcount(piecesUnderThreat(state, !state.whiteToMove));
+    int threatBonus = 70 * theirThreatened - 70 * ourThreatened;
+
+    int distanceBonus = 0;
+if (state.whiteToMove) {
+    Bitboard ourKings = state.white & state.kings;
+    Bitboard theirPieces = state.black;
+    while (ourKings) {
+        uint8_t kingPos = std::countr_zero(ourKings);
+        ourKings &= ourKings - 1;
+        int minDist = 100;
+        Bitboard pieces = theirPieces;
+        while (pieces) {
+            uint8_t piecePos = std::countr_zero(pieces);
+            pieces &= pieces - 1;
+            int dist = std::max(std::abs(squareCoords[kingPos].first - squareCoords[piecePos].first),
+                                std::abs(squareCoords[kingPos].second - squareCoords[piecePos].second));
+            minDist = std::min(minDist, dist);
+        }
+        distanceBonus += (8 - minDist) * 10;
+    }
+} else {
+    Bitboard ourKings = state.black & state.kings;
+    Bitboard theirPieces = state.white;
+    while (ourKings) {
+        uint8_t kingPos = std::countr_zero(ourKings);
+        ourKings &= ourKings - 1;
+        int minDist = 100;
+        Bitboard pieces = theirPieces;
+        while (pieces) {
+            uint8_t piecePos = std::countr_zero(pieces);
+            pieces &= pieces - 1;
+            int dist = std::max(std::abs(squareCoords[kingPos].first - squareCoords[piecePos].first),
+                                std::abs(squareCoords[kingPos].second - squareCoords[piecePos].second));
+            minDist = std::min(minDist, dist);
+        }
+        distanceBonus += (8 - minDist) * 10;
+    }
+}
+
+    // Combine scores
+     int totalScore = materialScore + centerControlBonus + edgeControlBonus+ promotionBonus + (pstScore * 2) + mobility + connectedBonus + 
+                     backRankKingBonus + threatBonus + distanceBonus;
     return state.whiteToMove ? totalScore : -totalScore;
 }
 
@@ -646,51 +877,63 @@ inline int minimax(const GameState& state, int depth, int alpha, int beta,
     return bestEval;
 }
 
-Move findBestMove(const GameState& state, int depth,std::vector<uint32_t> gameHistory) {
+Move findBestMove(const GameState& state, int depth,std::vector<Move>* gameHistory) {
     MoveList moves = generateMoves(state);
-    std::cout << "moves length:" << moves.count << std::endl;
     if (moves.count == 0)
         throw std::runtime_error("No legal moves available");
     
-    TranspositionTable tt(1 << 20);  // 1M entries
+    TranspositionTable tt(1 << 22);  // 4M entries
     Move bestMove = moves.moves[0];
+    std::vector<Move> bestMoves;
     int bestValue = state.whiteToMove ? -INF : INF;
     int alpha = -INF, beta = INF;
     
     for (const Move* m = moves.begin(); m != moves.end(); ++m) {
         GameState child = applyMove(state, *m);
         int moveValue = minimax(child, depth - 1, alpha, beta, tt);
+        std::cout << "best move evaluation score before repetition checking is :" << moveValue<< std::endl;
          // Check if this state has been repeated more than twice
-        std::cout << "child hash: "<<child.hash<<std::endl;
-        gameHistory.push_back(child.hash);
-		bool found = std::find(gameHistory.begin(), gameHistory.end(), child.hash) != gameHistory.end();
-		std::cout << "Found: " << (found ? "Yes" : "No") << std::endl;
-        int repeatCount = std::count(gameHistory.begin(), gameHistory.end(), child.hash);
-        std::cout << "repeated count :"<<repeatCount<<std::endl;
-        if (repeatCount >= 1) {
-            std::cout << "repeated move\n";
+        int repeatCount = std::count(gameHistory->begin(), gameHistory->end(), *m);
+        std::cout << "repat count: " << repeatCount<< std::endl;
+        if (repeatCount >= 2) {
             if (state.whiteToMove) {
-                moveValue -= 1000000;  // Punish for repeating (white is maximizing)
+                moveValue -= (1000000*repeatCount);  // Punish for repeating (white is maximizing)
             } else {
-                moveValue += 1000000;  // Punish for repeating (black is minimizing)
+                moveValue += (1000000*repeatCount);  // Punish for repeating (black is minimizing)
             }
         }
         if (state.whiteToMove) {
             if (moveValue > bestValue) {
                 bestValue = moveValue;
-                bestMove = *m;
+                bestMoves.clear();
+                bestMoves.push_back(*m);
+            } else if (moveValue == bestValue) {
+                bestMoves.push_back(*m);
             }
             alpha = std::max(alpha, bestValue);
         } else {
             if (moveValue < bestValue) {
                 bestValue = moveValue;
-                bestMove = *m;
+                bestMoves.clear();
+                bestMoves.push_back(*m);
+            } else if (moveValue == bestValue) {
+                bestMoves.push_back(*m);
             }
             beta = std::min(beta, bestValue);
         }
     }
+
+    // Select randomly from best moves
+    if (bestMoves.size() == 1) {
+        return bestMoves[0];
+    } else {
+        std::uniform_int_distribution<int> dist(0, bestMoves.size() - 1);
+        int idx = dist(rng);
+        return bestMoves[idx];
+    }
     
-    std::cout << "Best move evaluation: " << bestValue << "\n";
+    std::cout << "Best move evaluation after repition checking: " << bestValue << "\n";
+    gameHistory->push_back(bestMove);
     return bestMove;
 }
 
@@ -788,8 +1031,8 @@ public:
     GameState gameState;
     bool isWhite;
     int searchDepth=1;
-	std::vector<uint32_t> moveHistoryWhite;  // Track white state hashes 
-	std::vector<uint32_t> moveHistoryBlack;  // Track black state hashes
+	std::vector<Move> moveHistoryWhite;  // Track white state hashes 
+	std::vector<Move> moveHistoryBlack;  // Track black state hashes
 
     CheckersClient() { }
 
@@ -833,7 +1076,6 @@ public:
         client.socket()->on("board", [this](sio::event const &ev) {
             std::cout << "Received board update from server." << std::endl;
             updateGameStateFromJSON(ev.get_message(), gameState);
-            isWhite ? moveHistoryWhite.push_back(gameState.hash) : moveHistoryBlack.push_back(gameState.hash);// Add new state to history
         });
 
         // Listen for turn notifications.
@@ -842,7 +1084,7 @@ public:
             try {
                 gameState.whiteToMove = isWhite;
 				auto start = std::chrono::high_resolution_clock::now();
-                Move bestMove = findBestMove(gameState, searchDepth,isWhite?moveHistoryWhite:moveHistoryBlack);
+                Move bestMove = findBestMove(gameState, searchDepth,isWhite?&moveHistoryWhite:&moveHistoryBlack);
 				auto end = std::chrono::high_resolution_clock::now();
 				double duration_sec = std::chrono::duration_cast<std::chrono::seconds>(end - start).count();
                 std::cout << "Computed best move: " << bestMove << std::endl;
