@@ -139,13 +139,6 @@ constexpr std::array<uint32_t, 32> generateZobristKeys(uint32_t seed) {
     return keys;
 }
 
-constexpr bool repatingMove(std::vector<uint32_t> history) {
-    if (history.back() == history[history.size() -2])
-    {
-        return true;
-    }
-}
-
 constexpr int indexFromRC(int row, int col) {
     if (row < 0 || row >= 8 || col < 0 || col >= 8)
         return -1;
@@ -629,6 +622,41 @@ Bitboard piecesUnderThreat(const GameState& state, bool forWhite) noexcept {
     return threatened;
 }
 
+int computeMobility(const GameState& state, bool forWhite) {
+    int mobility = 0;
+    Bitboard pieces = forWhite ? state.white : state.black;
+    Bitboard men = pieces & ~state.kings;  // Non-king pieces (men)
+    Bitboard kings = pieces & state.kings; // King pieces
+
+    // Mobility for men
+    while (men) {
+        uint8_t square = std::countr_zero(men); // Get the position of the next man
+        men &= men - 1;                         // Clear this bit
+        if (forWhite) {
+            // White men move down-left and down-right
+            if (moves_array.whiteManLeft[square] & state.empty) mobility++;
+            if (moves_array.whiteManRight[square] & state.empty) mobility++;
+        } else {
+            // Black men move up-left and up-right
+            if (moves_array.blackManLeft[square] & state.empty) mobility++;
+            if (moves_array.blackManRight[square] & state.empty) mobility++;
+        }
+    }
+
+    // Mobility for kings (can move in all four directions)
+    while (kings) {
+        uint8_t square = std::countr_zero(kings);
+        kings &= kings - 1;
+        // Check all four directions
+        if (moves_array.whiteManLeft[square] & state.empty) mobility++;
+        if (moves_array.whiteManRight[square] & state.empty) mobility++;
+        if (moves_array.blackManLeft[square] & state.empty) mobility++;
+        if (moves_array.blackManRight[square] & state.empty) mobility++;
+    }
+
+    return mobility;
+}
+
 // Simple evaluation: piece count weighted by value
 // Enhanced evaluation function
 inline int evaluateState(const GameState& state) noexcept {
@@ -712,23 +740,19 @@ inline int evaluateState(const GameState& state) noexcept {
     }
 
     //Regular promotion bonus (for men) - reduced in endgame
-    int promotionMultiplier = isEndgame ? 2 : 10;
+    int promotionMultiplier = isEndgame ? 4 : 10;
     int whitePromotion = __builtin_popcount((state.white & ~state.kings) & PROMOTION_ZONE_BLACK);
     int blackPromotion = __builtin_popcount((state.black & ~state.kings) & PROMOTION_ZONE_WHITE);
     int promotionBonus = (whitePromotion - blackPromotion) * promotionMultiplier;
 
-    // Mobility bonus - more important in endgame
-    int mobilityMultiplier = isEndgame ? 8 : 5;
-    auto whiteState = state;
-    auto blackState= state;
-    whiteState.whiteToMove= true;
-	MoveList whiteMoves = generateMoves(whiteState);
-    blackState.whiteToMove = false;
-	MoveList blackMoves = generateMoves(blackState);
-    int mobility= (whiteMoves.count - blackMoves.count) * mobilityMultiplier;
+	// Mobility bonus - more important in endgame
+	int mobilityMultiplier = isEndgame ? 10 : 5;
+	int whiteMobility = computeMobility(state, true);
+	int blackMobility = computeMobility(state, false);
+	int mobility = (whiteMobility - blackMobility) * mobilityMultiplier;
 
     // Connected pieces bonus - less important in endgame
-    int connectionMultiplier = isEndgame ? 5 : 10;
+    int connectionMultiplier = isEndgame ? 7 : 10;
     int whiteConnections = 0;
     Bitboard whitePieces = state.white;
     while (whitePieces) {
@@ -760,7 +784,7 @@ inline int evaluateState(const GameState& state) noexcept {
     int backRankKingBonus = (whiteBackRankKings - blackBackRankKings) * backRankMultiplier;
 
     // Threat detection - more important in endgame
-    int threatMultiplier = isEndgame ? 100: 70;
+    int threatMultiplier = isEndgame ? 150: 70;
     int ourThreatened = __builtin_popcount(piecesUnderThreat(state, state.whiteToMove));
     int theirThreatened = __builtin_popcount(piecesUnderThreat(state, !state.whiteToMove));
     int threatBonus = threatMultiplier * theirThreatened - threatMultiplier * ourThreatened;
@@ -960,31 +984,31 @@ inline int minimax(const GameState& state, int depth, int alpha, int beta,
 }
 
 Move findBestMove(const GameState& state, int depth,std::vector<Move>* gameHistory) {
-    if (state.whiteToMove)
-    {
-    std::cout <<  "White turn\n" ;
-    }
-    else {
+    //if (state.whiteToMove)
+    //{
+    //std::cout <<  "White turn\n" ;
+    //}
+    //else {
 
-    std::cout <<  "Black turn\n" ;
-    }
+    //std::cout <<  "Black turn\n" ;
+    //}
     MoveList moves = generateMoves(state);
     if (moves.count == 0)
         throw std::runtime_error("No legal moves available");
     
-    TranspositionTable tt(1 << 22);  // 4M entries
+    TranspositionTable tt(1 << 25);  // 4M entries
     Move bestMove = moves.moves[0];
     int bestValue = state.whiteToMove ? -INF : INF;
     int alpha = -INF, beta = INF;
     
     for (const Move* m = moves.begin(); m != moves.end(); ++m) {
-        std::cout << "from :" << int(m->from) << "  to :" << int(m->to)<< std::endl;
+        //std::cout << "from :" << int(m->from) << "  to :" << int(m->to)<< std::endl;
         GameState child = applyMove(state, *m);
         int moveValue = minimax(child, depth - 1, alpha, beta, tt);
-        std::cout << "best move evaluation score before repetition checking is :" << moveValue << std::endl;
+        //std::cout << "best move evaluation score before repetition checking is :" << moveValue << std::endl;
         // Check if this state has been repeated more than twice
         int repeatCount = std::count(gameHistory->begin(), gameHistory->end(), *m);
-        std::cout << "repat count: " << repeatCount << std::endl;
+        //std::cout << "repat count: " << repeatCount << std::endl;
         if (repeatCount >= 2) {
             if (state.whiteToMove) {
                 moveValue -= (1000000 * repeatCount);  // Punish for repeating (white is maximizing)
@@ -1009,7 +1033,6 @@ Move findBestMove(const GameState& state, int depth,std::vector<Move>* gameHisto
         }
     }
 
-    std::cout << "kings" << std::bitset<32>(state.kings) << std::endl;
     //// Select randomly from best moves
     //if (bestMoves.size() == 1) {
     //    return bestMoves[0];
@@ -1019,7 +1042,7 @@ Move findBestMove(const GameState& state, int depth,std::vector<Move>* gameHisto
     //    return bestMoves[idx];
     //}
     
-    std::cout << "Best move evaluation after repition checking: " << bestValue << "\n";
+    //std::cout << "Best move evaluation after repition checking: " << bestValue << "\n";
     gameHistory->push_back(bestMove);
     return bestMove;
 }
@@ -1089,7 +1112,7 @@ void updateGameStateFromJSON(const sio::message::ptr &msg, GameState &state) {
     state.updateEmpty();
     state.hash = computeInitialHash(state);
     std::cout << "GameState updated from board JSON." << std::endl;
-    printGameState(state);
+    //printGameState(state);
 }
 
 
@@ -1160,7 +1183,7 @@ public:
                 gameState = applyMove(gameState, bestMove);
 				auto end = std::chrono::high_resolution_clock::now();
 				double duration_sec = std::chrono::duration_cast<std::chrono::seconds>(end - start).count();
-                std::cout << "Computed best move: " << bestMove << std::endl;
+                std::cout << "Computed best move: " << bestMove<<" in " <<duration_sec<<"s\n";
 
                 // Build JSON message to send the move.
                 auto moveMsg = sio::object_message::create();
