@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <vector>
 #include <sio_client.h>
+#include<bitset>
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -459,6 +460,7 @@ GameState applyMove(const GameState& state, const Move& move) noexcept {
     GameState newState = state;
     Bitboard fromBit = 1U << move.from;
     Bitboard toBit = 1U << move.to;
+    
      // Update hash for moving piece
     if (state.whiteToMove) {
         newState.hash ^= (state.kings & fromBit) ? zobrist_white_king[move.from] : zobrist_white_man[move.from];
@@ -486,19 +488,17 @@ GameState applyMove(const GameState& state, const Move& move) noexcept {
             newState.kings &= ~midBit;
         }
     }
-    
     // Promotion check
-    if (!(newState.kings & toBit)) {
+     if (!(newState.kings & toBit)) { // Only check if not already a king
         if ((state.whiteToMove && (move.to >= 28)) ||
             (!state.whiteToMove && (move.to <= 3))) {
-            newState.kings |= toBit;
+            newState.kings |= toBit; // Promote to king
         }
     }
     
     newState.updateEmpty();
-    //change this if u want to have game between the bot its self
     newState.whiteToMove = !newState.whiteToMove;
-    newState.hash = state.hash ^ zobrist_side_to_move;
+    newState.hash ^=  zobrist_side_to_move;
     return newState;
 }
 
@@ -644,7 +644,12 @@ inline int evaluateState(const GameState& state) noexcept {
     int materialScore = (whiteMen * 70 + whiteKings * 250) -
                         (blackMen * 70 + blackKings * 250);
 
-    // PST score
+    // Detect endgame - when kings are present or few pieces remain
+    bool isEndgame = (whiteKings + blackKings > 1) || 
+                     (whiteMen + blackMen + whiteKings + blackKings <= 15);
+
+    // PST score - reduce importance in endgame
+    int pstMultiplier = isEndgame ? 1 : 2;
     int pstScore = 0;
     Bitboard whiteMenBB = state.white & ~state.kings;
     Bitboard whiteKingsBB = state.white & state.kings;
@@ -653,12 +658,17 @@ inline int evaluateState(const GameState& state) noexcept {
 
     while (whiteMenBB) {
         uint8_t pos = std::countr_zero(whiteMenBB);
-        pstScore += whiteManPST[pos] ;
+        pstScore += whiteManPST[pos];
         whiteMenBB &= whiteMenBB - 1;
     }
     while (whiteKingsBB) {
         uint8_t pos = std::countr_zero(whiteKingsBB);
-        pstScore += kingPST[pos];
+        // In endgame, we DISCOURAGE kings from staying in their promotion zone
+        if (isEndgame && (pos >= 28 && pos <= 31)) {
+            pstScore -= 200; // Penalty for staying in own promotion zone
+        } else {
+            pstScore += kingPST[pos];
+        }
         whiteKingsBB &= whiteKingsBB - 1;
     }
     while (blackMenBB) {
@@ -668,30 +678,57 @@ inline int evaluateState(const GameState& state) noexcept {
     }
     while (blackKingsBB) {
         uint8_t pos = std::countr_zero(blackKingsBB);
-        pstScore -= kingPST[pos];  // Same table for black kings
+        // In endgame, we DISCOURAGE kings from staying in their promotion zone
+        if (isEndgame && (pos >= 0 && pos <= 8)) {
+            pstScore += 200; // Penalty for black kings staying in own promotion zone
+        } else {
+            pstScore -= kingPST[pos];  // Same table for black kings
+        }
         blackKingsBB &= blackKingsBB - 1;
     }
 
-	//Center control bonus 
-	int whiteCenterControl = __builtin_popcount(state.white & CENTER_SQUARES);
-	int blackCenterControl = __builtin_popcount(state.black & CENTER_SQUARES);
-	int centerControlBonus = (whiteCenterControl - blackCenterControl) * 10;
+    //Center control bonus - less important in endgame
+    int centerMultiplier = isEndgame ? 2 : 10;
+    int whiteCenterControl = __builtin_popcount(state.white & CENTER_SQUARES);
+    int blackCenterControl = __builtin_popcount(state.black & CENTER_SQUARES);
+    int centerControlBonus = (whiteCenterControl - blackCenterControl) * centerMultiplier;
 
-	//Edge control bonus 
-	int whiteEdgeControl = __builtin_popcount(state.white & EDGE_SQUARES);
-	int blackEdgeControl = __builtin_popcount(state.black & EDGE_SQUARES);
-	int edgeControlBonus = (whiteEdgeControl - blackEdgeControl) * 5;
+    //Edge control bonus - less important in endgame
+    int edgeMultiplier = isEndgame ? 1 : 5;
+    int whiteEdgeControl = __builtin_popcount(state.white & EDGE_SQUARES);
+    int blackEdgeControl = __builtin_popcount(state.black & EDGE_SQUARES);
+    int edgeControlBonus = (whiteEdgeControl - blackEdgeControl) * edgeMultiplier;
 
-	//Promotion bonus 
-	int whitePromotion = __builtin_popcount(state.white & PROMOTION_ZONE_WHITE);
-	int blackPromotion = __builtin_popcount(state.black & PROMOTION_ZONE_BLACK);
-	int promotionBonus= (whitePromotion- blackPromotion) * 10;
+    //Promotion zone penalty in endgame for kings
+    int promotionZonePenalty = 0;
+    if (isEndgame) {
+        // Penalize white kings for staying in white's promotion zone
+        int whiteKingsInPromoZone = __builtin_popcount((state.white & state.kings) & PROMOTION_ZONE_WHITE);
+        // Penalize black kings for staying in black's promotion zone
+        int blackKingsInPromoZone = __builtin_popcount((state.black & state.kings) & PROMOTION_ZONE_BLACK);
+        
+        // Apply severe penalty (negative for white, positive for black)
+        promotionZonePenalty = -300 * whiteKingsInPromoZone + 300 * blackKingsInPromoZone;
+    }
 
-    // Mobility bonus
-    MoveList moves = generateMoves(state);
-    int mobility = moves.count * 5;  // 5 points per legal move
+    //Regular promotion bonus (for men) - reduced in endgame
+    int promotionMultiplier = isEndgame ? 2 : 10;
+    int whitePromotion = __builtin_popcount((state.white & ~state.kings) & PROMOTION_ZONE_BLACK);
+    int blackPromotion = __builtin_popcount((state.black & ~state.kings) & PROMOTION_ZONE_WHITE);
+    int promotionBonus = (whitePromotion - blackPromotion) * promotionMultiplier;
 
-    // Connected pieces bonus
+    // Mobility bonus - more important in endgame
+    int mobilityMultiplier = isEndgame ? 8 : 5;
+    auto whiteState = state;
+    auto blackState= state;
+    whiteState.whiteToMove= true;
+	MoveList whiteMoves = generateMoves(whiteState);
+    blackState.whiteToMove = false;
+	MoveList blackMoves = generateMoves(blackState);
+    int mobility= (whiteMoves.count - blackMoves.count) * mobilityMultiplier;
+
+    // Connected pieces bonus - less important in endgame
+    int connectionMultiplier = isEndgame ? 5 : 10;
     int whiteConnections = 0;
     Bitboard whitePieces = state.white;
     while (whitePieces) {
@@ -714,59 +751,100 @@ inline int evaluateState(const GameState& state) noexcept {
     }
     blackConnections /= 2;
 
-    int connectedBonus = (whiteConnections - blackConnections) * 10;  // 10 per connection
+    int connectedBonus = (whiteConnections - blackConnections) * connectionMultiplier;
 
-    // Back rank king bonus
+    // Completely remove back rank bonus in endgame
+    int backRankMultiplier = isEndgame ? 0 : 20;
     int whiteBackRankKings = __builtin_popcount(state.white & state.kings & 0xF0000000);  // Squares 28-31
     int blackBackRankKings = __builtin_popcount(state.black & state.kings & 0x0000000F);  // Squares 0-3
-    int backRankKingBonus = (whiteBackRankKings - blackBackRankKings) * 20;  // 20 per king
+    int backRankKingBonus = (whiteBackRankKings - blackBackRankKings) * backRankMultiplier;
 
-      // Threat detection
+    // Threat detection - more important in endgame
+    int threatMultiplier = isEndgame ? 100: 70;
     int ourThreatened = __builtin_popcount(piecesUnderThreat(state, state.whiteToMove));
     int theirThreatened = __builtin_popcount(piecesUnderThreat(state, !state.whiteToMove));
-    int threatBonus = 70 * theirThreatened - 70 * ourThreatened;
+    int threatBonus = threatMultiplier * theirThreatened - threatMultiplier * ourThreatened;
 
+    // King distance bonus - highly enhanced in endgame
+    int distanceMultiplier = isEndgame ? 20 : 10;
     int distanceBonus = 0;
-if (state.whiteToMove) {
-    Bitboard ourKings = state.white & state.kings;
-    Bitboard theirPieces = state.black;
-    while (ourKings) {
-        uint8_t kingPos = std::countr_zero(ourKings);
-        ourKings &= ourKings - 1;
-        int minDist = 100;
-        Bitboard pieces = theirPieces;
-        while (pieces) {
-            uint8_t piecePos = std::countr_zero(pieces);
-            pieces &= pieces - 1;
-            int dist = std::max(std::abs(squareCoords[kingPos].first - squareCoords[piecePos].first),
-                                std::abs(squareCoords[kingPos].second - squareCoords[piecePos].second));
-            minDist = std::min(minDist, dist);
+    
+    if (state.whiteToMove) {
+        Bitboard ourKings = state.white & state.kings;
+        Bitboard theirPieces = state.black;
+        while (ourKings) {
+            uint8_t kingPos = std::countr_zero(ourKings);
+            ourKings &= ourKings - 1;
+            int minDist = 100;
+            Bitboard pieces = theirPieces;
+            while (pieces) {
+                uint8_t piecePos = std::countr_zero(pieces);
+                pieces &= pieces - 1;
+                int dist = std::max(std::abs(squareCoords[kingPos].first - squareCoords[piecePos].first),
+                                    std::abs(squareCoords[kingPos].second - squareCoords[piecePos].second));
+                minDist = std::min(minDist, dist);
+            }
+            distanceBonus += (8 - minDist) * distanceMultiplier;
         }
-        distanceBonus += (8 - minDist) * 10;
-    }
-} else {
-    Bitboard ourKings = state.black & state.kings;
-    Bitboard theirPieces = state.white;
-    while (ourKings) {
-        uint8_t kingPos = std::countr_zero(ourKings);
-        ourKings &= ourKings - 1;
-        int minDist = 100;
-        Bitboard pieces = theirPieces;
-        while (pieces) {
-            uint8_t piecePos = std::countr_zero(pieces);
-            pieces &= pieces - 1;
-            int dist = std::max(std::abs(squareCoords[kingPos].first - squareCoords[piecePos].first),
-                                std::abs(squareCoords[kingPos].second - squareCoords[piecePos].second));
-            minDist = std::min(minDist, dist);
+    } else {
+        Bitboard ourKings = state.black & state.kings;
+        Bitboard theirPieces = state.white;
+        while (ourKings) {
+            uint8_t kingPos = std::countr_zero(ourKings);
+            ourKings &= ourKings - 1;
+            int minDist = 100;
+            Bitboard pieces = theirPieces;
+            while (pieces) {
+                uint8_t piecePos = std::countr_zero(pieces);
+                pieces &= pieces - 1;
+                int dist = std::max(std::abs(squareCoords[kingPos].first - squareCoords[piecePos].first),
+                                    std::abs(squareCoords[kingPos].second - squareCoords[piecePos].second));
+                minDist = std::min(minDist, dist);
+            }
+            distanceBonus += (8 - minDist) * distanceMultiplier;
         }
-        distanceBonus += (8 - minDist) * 10;
     }
-}
 
-    // Combine scores
-     int totalScore = materialScore + centerControlBonus + edgeControlBonus+ promotionBonus + (pstScore * 2) + mobility + connectedBonus + 
-                     backRankKingBonus + threatBonus + distanceBonus;
-    return state.whiteToMove ? totalScore : -totalScore;
+    // Aggressive king advancement in endgame
+    int kingAggressionBonus = 0;
+    if (isEndgame) {
+        // For white kings - reward being on black's half of the board
+        Bitboard whiteKingsOnBlackSide = state.white & state.kings & 0x00FFFFFF; // Squares 0-23 (black's side)
+        int whiteKingsAdvanced = __builtin_popcount(whiteKingsOnBlackSide);
+        
+        // For black kings - reward being on white's half of the board
+        Bitboard blackKingsOnWhiteSide = state.black & state.kings & 0xFFFFFF00; // Squares 8-31 (white's side)
+        int blackKingsAdvanced = __builtin_popcount(blackKingsOnWhiteSide);
+        
+        // Apply a VERY strong bonus (positive for white, negative for black)
+        kingAggressionBonus = 350* whiteKingsAdvanced + ( -350 * blackKingsAdvanced);
+        
+        // Additional bonus for kings based on row advancement
+        Bitboard whiteKings = state.white & state.kings;
+        while (whiteKings) {
+            uint8_t kingPos = std::countr_zero(whiteKings);
+            whiteKings &= whiteKings - 1;
+            int row = (kingPos / 4)+1; // 0-7 row index (7 is white's back rank)
+            // Give exponentially more points the closer to black's side
+            kingAggressionBonus += (7 - row) * (7 - row) * 20;
+        }
+        
+        Bitboard blackKings = state.black & state.kings;
+        while (blackKings) {
+            uint8_t kingPos = std::countr_zero(blackKings);
+            blackKings &= blackKings - 1;
+            int row = (kingPos / 4)+1; // 0-7 row index (0 is black's back rank)
+            // Give exponentially more points the closer to white's side
+            kingAggressionBonus += row * row * 20;
+        }
+    }
+
+    // Combine scores with adjusted weights
+    int totalScore = materialScore + centerControlBonus + edgeControlBonus + promotionBonus + 
+                     (pstScore * pstMultiplier) + mobility + connectedBonus + backRankKingBonus + 
+                     threatBonus + distanceBonus + kingAggressionBonus + promotionZonePenalty;
+                     
+    return  totalScore;
 }
 
 // Transposition table for alpha-beta search
@@ -846,6 +924,10 @@ inline int minimax(const GameState& state, int depth, int alpha, int beta,
             return ttEval;
     }
     
+    // Save the original bounds
+    int originalAlpha = alpha;
+    int originalBeta  = beta;
+    
     MoveList moves = generateMoves(state);
     if (moves.count == 0)
         return state.whiteToMove ? -INF : INF;
@@ -866,9 +948,9 @@ inline int minimax(const GameState& state, int depth, int alpha, int beta,
     }
     
     TranspositionTable::Flag flag;
-    if (bestEval <= alpha)
+    if (bestEval <= originalAlpha)
         flag = TranspositionTable::UPPER;
-    else if (bestEval >= beta)
+    else if (bestEval >= originalBeta)
         flag = TranspositionTable::LOWER;
     else
         flag = TranspositionTable::EXACT;
@@ -878,59 +960,64 @@ inline int minimax(const GameState& state, int depth, int alpha, int beta,
 }
 
 Move findBestMove(const GameState& state, int depth,std::vector<Move>* gameHistory) {
+    if (state.whiteToMove)
+    {
+    std::cout <<  "White turn\n" ;
+    }
+    else {
+
+    std::cout <<  "Black turn\n" ;
+    }
     MoveList moves = generateMoves(state);
     if (moves.count == 0)
         throw std::runtime_error("No legal moves available");
     
     TranspositionTable tt(1 << 22);  // 4M entries
     Move bestMove = moves.moves[0];
-    std::vector<Move> bestMoves;
     int bestValue = state.whiteToMove ? -INF : INF;
     int alpha = -INF, beta = INF;
     
     for (const Move* m = moves.begin(); m != moves.end(); ++m) {
+        std::cout << "from :" << int(m->from) << "  to :" << int(m->to)<< std::endl;
         GameState child = applyMove(state, *m);
         int moveValue = minimax(child, depth - 1, alpha, beta, tt);
-        std::cout << "best move evaluation score before repetition checking is :" << moveValue<< std::endl;
-         // Check if this state has been repeated more than twice
+        std::cout << "best move evaluation score before repetition checking is :" << moveValue << std::endl;
+        // Check if this state has been repeated more than twice
         int repeatCount = std::count(gameHistory->begin(), gameHistory->end(), *m);
-        std::cout << "repat count: " << repeatCount<< std::endl;
+        std::cout << "repat count: " << repeatCount << std::endl;
         if (repeatCount >= 2) {
             if (state.whiteToMove) {
-                moveValue -= (1000000*repeatCount);  // Punish for repeating (white is maximizing)
-            } else {
-                moveValue += (1000000*repeatCount);  // Punish for repeating (black is minimizing)
+                moveValue -= (1000000 * repeatCount);  // Punish for repeating (white is maximizing)
+            }
+            else {
+                moveValue += (1000000 * repeatCount);  // Punish for repeating (black is minimizing)
             }
         }
         if (state.whiteToMove) {
             if (moveValue > bestValue) {
                 bestValue = moveValue;
-                bestMoves.clear();
-                bestMoves.push_back(*m);
-            } else if (moveValue == bestValue) {
-                bestMoves.push_back(*m);
+                bestMove = *m;
+                alpha = std::max(alpha, bestValue);
             }
-            alpha = std::max(alpha, bestValue);
-        } else {
+        }
+        else {
             if (moveValue < bestValue) {
                 bestValue = moveValue;
-                bestMoves.clear();
-                bestMoves.push_back(*m);
-            } else if (moveValue == bestValue) {
-                bestMoves.push_back(*m);
+                bestMove = *m;
+                beta = std::min(beta, bestValue);
             }
-            beta = std::min(beta, bestValue);
         }
     }
 
-    // Select randomly from best moves
-    if (bestMoves.size() == 1) {
-        return bestMoves[0];
-    } else {
-        std::uniform_int_distribution<int> dist(0, bestMoves.size() - 1);
-        int idx = dist(rng);
-        return bestMoves[idx];
-    }
+    std::cout << "kings" << std::bitset<32>(state.kings) << std::endl;
+    //// Select randomly from best moves
+    //if (bestMoves.size() == 1) {
+    //    return bestMoves[0];
+    //} else {
+    //    std::uniform_int_distribution<int> dist(0, bestMoves.size() - 1);
+    //    int idx = dist(rng);
+    //    return bestMoves[idx];
+    //}
     
     std::cout << "Best move evaluation after repition checking: " << bestValue << "\n";
     gameHistory->push_back(bestMove);
@@ -939,24 +1026,9 @@ Move findBestMove(const GameState& state, int depth,std::vector<Move>* gameHisto
 
 
 
-inline bool isKing(uint8_t y,bool white) {
-    switch (white)
-    {
-    case true:
-    if (y==7)
-    {
-        return true;
-    }
-    return false;
-
-    case false:
-    if (y==0)
-    {
-        return true;
-    }
-    return false;
-    }
-
+inline bool isKing(uint8_t from, GameState state) {
+    Bitboard piece = 1U << from;
+	return  (state.kings & piece) != 0;
 }
 
 
@@ -1085,6 +1157,7 @@ public:
                 gameState.whiteToMove = isWhite;
 				auto start = std::chrono::high_resolution_clock::now();
                 Move bestMove = findBestMove(gameState, searchDepth,isWhite?&moveHistoryWhite:&moveHistoryBlack);
+                gameState = applyMove(gameState, bestMove);
 				auto end = std::chrono::high_resolution_clock::now();
 				double duration_sec = std::chrono::duration_cast<std::chrono::seconds>(end - start).count();
                 std::cout << "Computed best move: " << bestMove << std::endl;
@@ -1095,7 +1168,7 @@ public:
                 // Use the y–coordinate (from positions_indexes) to decide promotion.
                 moveMsg->get_map()["x"] = sio::int_message::create(positions_indexes.at(bestMove.to).x);
                 moveMsg->get_map()["y"] = sio::int_message::create(positions_indexes.at(bestMove.to).y);
-                moveMsg->get_map()["king"] = sio::bool_message::create(isKing(positions_indexes.at(bestMove.from).y, gameState.whiteToMove));
+                moveMsg->get_map()["king"] = sio::bool_message::create(isKing(bestMove.from, gameState));
                 sio::message::list li;
                 li.push(moveMsg);
                 li.push(sio::int_message::create(isWhite ? 1 : 0));
